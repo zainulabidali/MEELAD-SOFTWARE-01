@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Admin Dashboard — Institute Event Portal</title>
+    <!-- App Favicon Package -->
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg?v=microphone">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="../css/dashboard.css">
+    <style>
+        /* ── Frosted Light Glassmorphism Cards ── */
+        .institutes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+            gap: 1.75rem;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.72) !important;
+            backdrop-filter: blur(20px) saturate(180%) !important;
+            -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+            border: 1px solid rgba(255, 255, 255, 0.45) !important;
+            border-radius: 20px !important;
+            padding: 1.75rem !important;
+            box-shadow: 0 10px 30px rgba(23, 37, 27, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+            display: flex;
+            flex-direction: column;
+            color: var(--text-dark);
+            height: 100%;
+        }
+
+        .glass-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px rgba(23, 37, 27, 0.08), inset 0 1px 1px rgba(255, 255, 255, 0.9) !important;
+            border-color: rgba(67, 56, 202, 0.3) !important;
+        }
+
+        .glass-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+            padding-bottom: 1rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .card-type-tag {
+            font-size: 0.65rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--primary-color);
+            margin-bottom: 0.25rem;
+            display: block;
+        }
+
+        .glass-card .card-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-dark);
+            margin: 0;
+            line-height: 1.2;
+        }
+
+        .glass-card .card-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            font-size: 0.875rem;
+            flex-grow: 1;
+        }
+
+        .card-info-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .card-info-icon {
+            font-size: 1.2rem;
+            width: 24px;
+            text-align: center;
+            opacity: 0.8;
+            flex-shrink: 0;
+        }
+
+        .card-info-text {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .card-info-label {
+            font-weight: 700;
+            color: var(--text-muted);
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            line-height: 1.2;
+        }
+
+        .card-info-val {
+            color: var(--text-dark);
+            font-weight: 600;
+            font-size: 0.875rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .glass-card .card-actions {
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(0, 0, 0, 0.06);
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+        }
+
+        /* ── Premium Responsive Table for Pending ── */
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.02);
+            background: #ffffff;
+            margin-top: 1rem;
+        }
+
+        .premium-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+            text-align: left;
+            min-width: 800px;
+        }
+
+        .premium-table th {
+            background-color: #F5FAF7;
+            color: #64756A;
+            font-weight: 700;
+            padding: 1rem 1.25rem;
+            border-bottom: 2px solid var(--border-color);
+            text-transform: uppercase;
+            font-size: 0.72rem;
+            letter-spacing: 0.05em;
+        }
+
+        .premium-table td {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            color: #64756A;
+            vertical-align: middle;
+        }
+
+        .premium-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .premium-table tr:hover {
+            background-color: #F5FAF7;
+        }
+
+        .table-teacher-name {
+            font-weight: 700;
+            color: #17251B;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .table-avatar {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #e0e7ff, #ECFDF5);
+            color: #064E3B;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 0.8rem;
+        }
+
+        /* ── Modern Blur overlay & Modal overrides ── */
+        .modal-overlay {
+            backdrop-filter: blur(8px) !important;
+            background-color: rgba(23, 37, 27, 0.4) !important;
+            transition: all 0.3s ease;
+        }
+
+        .modal {
+            background: rgba(255, 255, 255, 0.85) !important;
+            backdrop-filter: blur(25px) saturate(190%) !important;
+            -webkit-backdrop-filter: blur(25px) saturate(190%) !important;
+            border: 1px solid rgba(255, 255, 255, 0.4) !important;
+            border-radius: 24px !important;
+            box-shadow: 0 30px 70px rgba(0, 0, 0, 0.12) !important;
+            animation: modalSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes modalSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(0.98);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        /* ── Global Viewport & Responsiveness Overrides ── */
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow-x: hidden;
+        }
+
+        /* Make institutes-grid fit all mobile and tablet widths perfectly without overflow */
+        .institutes-grid {
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)) !important;
+            gap: 1.5rem !important;
+        }
+
+        /* Sticky topbar with soft lighting */
+        .topbar {
+            position: sticky;
+            top: 0;
+            background: rgba(255, 255, 255, 0.72) !important;
+            backdrop-filter: blur(20px) saturate(180%) !important;
+            -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
+            z-index: 100 !important;
+        }
+
+        /* Responsive Table cells, ensuring wrap & prevent clipping */
+        .premium-table th,
+        .premium-table td {
+            white-space: normal !important;
+            word-break: break-word !important;
+        }
+
+        .table-teacher-name {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 180px;
+        }
+
+        .table-responsive {
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* ── Mobile Menu Button Glassmorphism ── */
+        @media (max-width: 1024px) {
+            .menu-btn {
+                display: flex !important;
+                align-items: center;
+                justify-content: center;
+                width: 44px;
+                height: 44px;
+                border-radius: 50% !important;
+                background: rgba(255, 255, 255, 0.7) !important;
+                backdrop-filter: blur(20px) saturate(180%) !important;
+                -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+                border: 1px solid rgba(255, 255, 255, 0.5) !important;
+                color: #1e1b4b !important;
+                font-size: 1.3rem !important;
+                cursor: pointer;
+                box-shadow: 0 4px 15px rgba(23, 37, 27, 0.08), inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
+                transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+                z-index: 90 !important;
+                flex-shrink: 0;
+            }
+
+            .menu-btn:hover {
+                background: rgba(255, 255, 255, 0.85) !important;
+                transform: translateY(-2px);
+                box-shadow: 0 8px 25px rgba(23, 37, 27, 0.12), inset 0 1px 1px rgba(255, 255, 255, 0.9) !important;
+            }
+
+            .menu-btn:active {
+                transform: translateY(0) scale(0.95);
+            }
+        }
+
+        /* ── Dark Glassmorphism Drawer panel styling & dimensions ── */
+        @media (max-width: 1024px) {
+            .sidebar {
+                width: 340px !important;
+                max-width: 80vw !important;
+                background: rgba(30, 27, 75, 0.85) !important;
+                backdrop-filter: blur(25px) saturate(190%) !important;
+                -webkit-backdrop-filter: blur(25px) saturate(190%) !important;
+                border-right: 1px solid rgba(255, 255, 255, 0.12) !important;
+                box-shadow: 10px 0 40px rgba(23, 37, 27, 0.25) !important;
+                transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 80vw !important;
+                max-width: 320px !important;
+            }
+
+            .glass-card {
+                padding: 1.25rem !important;
+                border-radius: 16px !important;
+            }
+        }
+
+        /* ── Drawer Backdrop Overlay styling ── */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(23, 37, 27, 0.4);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 990;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .sidebar-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* ── Institutes Toolbar & Controls ── */
+        .institutes-toolbar-card {
+            background: rgba(255, 255, 255, 0.8) !important;
+            backdrop-filter: blur(20px) saturate(180%) !important;
+            -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+            border: 1px solid rgba(226, 232, 240, 0.8) !important;
+            border-radius: 18px !important;
+            padding: 1.25rem 1.5rem !important;
+            margin-bottom: 1.5rem !important;
+            box-shadow: 0 4px 20px rgba(23, 37, 27, 0.03) !important;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .toolbar-top-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .search-input-group {
+            position: relative;
+            flex: 1 1 300px;
+            min-width: 260px;
+        }
+
+        .search-input-group .search-icon {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1rem;
+            color: #64756A;
+            pointer-events: none;
+        }
+
+        .search-input-group input {
+            width: 100%;
+            padding: 0.75rem 1rem 0.75rem 2.6rem;
+            border-radius: 12px;
+            border: 1px solid #D8E8DE;
+            background: #ffffff;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #17251B;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .search-input-group input:focus {
+            border-color: #059669;
+            box-shadow: 0 0 0 4px rgba(4, 120, 87, 0.12);
+        }
+
+        .filters-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            align-items: center;
+            flex: 2 1 auto;
+        }
+
+        .toolbar-select {
+            padding: 0.7rem 2.2rem 0.7rem 0.9rem;
+            border-radius: 12px;
+            border: 1px solid #D8E8DE;
+            background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%252364748b' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19.5 8.25l-7.5 7.5-7.5-7.5'/%3E%3C/svg%3E") no-repeat right 0.75rem center;
+            background-size: 1rem;
+            appearance: none;
+            -webkit-appearance: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #64756A;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.2s ease;
+            min-width: 130px;
+        }
+
+        .toolbar-select:focus {
+            border-color: #059669;
+            box-shadow: 0 0 0 4px rgba(4, 120, 87, 0.12);
+        }
+
+        .institutes-stats-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 0.75rem;
+            border-top: 1px solid rgba(226, 232, 240, 0.6);
+            font-size: 0.825rem;
+            color: #64756A;
+            font-weight: 600;
+        }
+
+        .reset-filters-btn {
+            background: none;
+            border: none;
+            color: #059669;
+            font-weight: 700;
+            font-size: 0.825rem;
+            cursor: pointer;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .reset-filters-btn:hover {
+            text-decoration: underline;
+        }
+
+        /* ── Compact Table Enhancements ── */
+        .institutes-table-card {
+            background: #ffffff;
+            border-radius: 18px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 20px rgba(23, 37, 27, 0.03);
+            overflow: hidden;
+        }
+
+        .inst-table-th {
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s;
+        }
+
+        .inst-table-th:hover {
+            background-color: #ECFDF5 !important;
+        }
+
+        .inst-table-th .sort-icon {
+            display: inline-block;
+            margin-left: 4px;
+            font-size: 0.75rem;
+            opacity: 0.6;
+        }
+
+        .inst-row-title {
+            font-weight: 700;
+            color: #17251B;
+            font-size: 0.925rem;
+            font-family: 'Outfit', sans-serif;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .inst-type-badge {
+            font-size: 0.68rem;
+            font-weight: 800;
+            padding: 0.15rem 0.45rem;
+            border-radius: 6px;
+            background: #ECFDF5;
+            color: #64756A;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .badge-expired {
+            background: #fef2f2 !important;
+            color: #EF4444 !important;
+            border: 1px solid #fee2e2 !important;
+        }
+
+        .badge-trial {
+            background: #faf5ff !important;
+            color: #9333ea !important;
+            border: 1px solid #f3e8ff !important;
+        }
+
+        /* ── Action Buttons Styling ── */
+        .btn-action {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.4rem 0.65rem;
+            font-size: 0.775rem;
+            font-weight: 700;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            gap: 4px;
+            line-height: 1;
+        }
+
+        .btn-action-view {
+            background: #eff6ff;
+            color: #2563eb;
+            border-color: #bfdbfe;
+        }
+
+        .btn-action-view:hover {
+            background: #dbeafe;
+            color: #1d4ed8;
+            transform: translateY(-1px);
+        }
+
+        .btn-action-edit {
+            background: #F5FAF7;
+            color: #64756A;
+            border-color: #D8E8DE;
+        }
+
+        .btn-action-edit:hover {
+            background: #ECFDF5;
+            color: #17251B;
+            transform: translateY(-1px);
+        }
+
+        .btn-action-toggle {
+            background: #ECFDF5;
+            color: #059669;
+            border-color: #bbf7d0;
+        }
+
+        .btn-action-toggle:hover {
+            background: #D1FAE5;
+            color: #047857;
+            transform: translateY(-1px);
+        }
+
+        .btn-action-toggle.deactivate {
+            background: #fffbeb;
+            color: #F59E0B;
+            border-color: #fef3c7;
+        }
+
+        .btn-action-toggle.deactivate:hover {
+            background: #fef3c7;
+            color: #b45309;
+        }
+
+        .btn-action-delete {
+            background: #fef2f2;
+            color: #EF4444;
+            border-color: #fecaca;
+        }
+
+        .btn-action-delete:hover {
+            background: #fee2e2;
+            color: #b91c1c;
+            transform: translateY(-1px);
+        }
+
+        .btn-action-login {
+            background: #f5f3ff;
+            color: #047857;
+            border-color: #ddd6fe;
+        }
+
+        .btn-action-login:hover {
+            background: #ede9fe;
+            color: #065F46;
+            transform: translateY(-1px);
+        }
+
+        /* ── Three-Dot Dropdown Menu ── */
+        .action-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .dropdown-trigger {
+            background: none;
+            border: none;
+            font-size: 1.25rem;
+            padding: 0.5rem;
+            cursor: pointer;
+            color: #64756A;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .dropdown-trigger:hover {
+            background: #ECFDF5;
+            color: #17251B;
+        }
+
+        .dropdown-menu {
+            position: absolute;
+            right: 0;
+            top: 100%;
+            background: #ffffff;
+            border: 1px solid #D8E8DE;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            min-width: 180px;
+            z-index: 50;
+            display: none;
+            flex-direction: column;
+            padding: 0.5rem 0;
+            animation: fadeIn 0.15s ease-out;
+        }
+
+        .dropdown-menu.show {
+            display: flex;
+        }
+
+        .dropdown-item {
+            padding: 0.6rem 1rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #64756A;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-align: left;
+            background: none;
+            border: none;
+            width: 100%;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .dropdown-item:hover {
+            background: #F5FAF7;
+            color: #17251B;
+        }
+
+        .dropdown-item.text-danger {
+            color: #EF4444;
+        }
+
+        .dropdown-item.text-danger:hover {
+            background: #fef2f2;
+            color: #991b1b;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-5px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (min-width: 768px) {
+            .table-responsive {
+                overflow: visible !important;
+            }
+        }
+
+        /* ── Pagination Styling ── */
+        .pagination-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.5rem;
+            background: #ffffff;
+            border-top: 1px solid var(--border-color);
+            gap: 1rem;
+        }
+
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .page-btn {
+            min-width: 34px;
+            height: 34px;
+            padding: 0 0.5rem;
+            border-radius: 8px;
+            border: 1px solid #D8E8DE;
+            background: #ffffff;
+            color: #64756A;
+            font-size: 0.85rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .page-btn:hover:not(:disabled) {
+            border-color: #059669;
+            color: #059669;
+            background: #f5f3ff;
+        }
+
+        .page-btn.active {
+            background: #059669;
+            color: #ffffff;
+            border-color: #059669;
+        }
+
+        .page-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* ── Institute Details Drawer / Modal Styling ── */
+        .details-modal {
+            max-width: 800px !important;
+            width: 92% !important;
+        }
+
+        .details-header-card {
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+            padding: 1.25rem;
+            background: linear-gradient(135deg, #F5FAF7, #ECFDF5);
+            border-radius: 16px;
+            border: 1px solid #D8E8DE;
+            margin-bottom: 1.5rem;
+        }
+
+        .details-avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #059669, #065F46);
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 800;
+            flex-shrink: 0;
+            box-shadow: 0 8px 20px rgba(4, 120, 87, 0.25);
+        }
+
+        .details-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1.25rem;
+        }
+
+        .details-field {
+            background: #ffffff;
+            padding: 1rem;
+            border-radius: 14px;
+            border: 1px solid #D8E8DE;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .details-label {
+            font-size: 0.72rem;
+            font-weight: 800;
+            color: #64756A;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .details-val {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #17251B;
+            word-break: break-word;
+        }
+    </style>
+</head>
+
+<body class="dashboard-body hidden" style="display: none;">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <span style="font-size:1.35rem;">🏫</span>
+            <h2>Super Admin</h2>
+            <button class="close-sidebar-btn" id="closeSidebarBtn" aria-label="Close Menu">&times;</button>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="#" class="nav-item active" id="navInstitutes" data-section="institutes">
+                <span class="icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width:1.25rem; height:1.25rem;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.33l-7.5-5-7.5 5V21" />
+                    </svg>
+                </span> Institutes
+            </a>
+            <a href="#" class="nav-item" id="navPending" data-section="pending">
+                <span class="icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width:1.25rem; height:1.25rem;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                </span> Pending Registrations
+                <span class="pending-badge hidden" id="pendingBadge">0</span>
+            </a>
+
+            <hr style="border:0; border-top:1px solid rgba(255,255,255,0.06); margin:1rem 0;">
+            <a href="#" class="nav-item" id="logoutBtn">
+                <span class="icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width:1.25rem; height:1.25rem;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
+                    </svg>
+                </span> Logout
+            </a>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="menu-btn" id="mobileMenuBtn" aria-label="Open Menu">☰</button>
+                <h1 class="page-title" id="pageTitle">Manage Institutes</h1>
+            </div>
+            <div class="topbar-actions" id="topbarActions">
+                <button class="btn btn-primary" id="openAddModalBtn">+ Add Institute</button>
+            </div>
+        </header>
+
+        <!-- INSTITUTES SECTION -->
+        <section class="content-area" id="sectionInstitutes">
+            <div id="institutesLoader" class="loader-container hidden">
+                <div class="spinner"></div>
+            </div>
+
+            <!-- Toolbar & Search Filters -->
+            <div class="institutes-toolbar-card">
+                <div class="toolbar-top-row">
+                    <div class="search-input-group">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="instSearchInput" placeholder="Search institute, madrasa, phone, email, district...">
+                    </div>
+                    <div class="filters-group">
+                        <select id="instStatusFilter" class="toolbar-select" aria-label="Filter by Status">
+                            <option value="all">All Statuses</option>
+                            <option value="active">Active</option>
+                            <option value="deactivated">Inactive / Deactivated</option>
+                            <option value="expired">Expired</option>
+                        </select>
+                        <select id="instTypeFilter" class="toolbar-select" aria-label="Filter by Type">
+                            <option value="all">All Types</option>
+                            <option value="Madrasa">Madrasa</option>
+                            <option value="School">School</option>
+                            <option value="College">College</option>
+                            <option value="Arabic College">Arabic College</option>
+                            <option value="Islamic Center">Islamic Center</option>
+                            <option value="Other">Other</option>
+                        </select>
+                        <select id="instDistrictFilter" class="toolbar-select" aria-label="Filter by District">
+                            <option value="all">All Districts</option>
+                        </select>
+                        <select id="instSortSelect" class="toolbar-select" aria-label="Sort by">
+                            <option value="name_asc">Name (A-Z)</option>
+                            <option value="name_desc">Name (Z-A)</option>
+                            <option value="date_desc" selected>Reg Date (Newest)</option>
+                            <option value="date_asc">Reg Date (Oldest)</option>
+                            <option value="expiry_asc">Expiry (Soonest)</option>
+                            <option value="expiry_desc">Expiry (Furthest)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="institutes-stats-bar">
+                    <span id="instCountInfo">Showing 0 institutes</span>
+                    <button type="button" class="reset-filters-btn hidden" id="resetFiltersBtn">🔄 Reset Filters</button>
+                </div>
+            </div>
+
+            <!-- Compact Table Container -->
+            <div class="institutes-table-card">
+                <div class="table-responsive">
+                    <table class="premium-table" id="institutesTable">
+                        <thead>
+                            <tr>
+                                <th class="inst-table-th" data-sort="name">Institute Name <span class="sort-icon">⇅</span></th>
+                                <th class="inst-table-th" data-sort="district">Location <span class="sort-icon">⇅</span></th>
+                                <th>Email Address</th>
+                                <th class="inst-table-th" data-sort="date_desc">Registration Date <span class="sort-icon">⇅</span></th>
+                                <th class="inst-table-th" data-sort="expiry">Expiry Date <span class="sort-icon">⇅</span></th>
+                                <th class="inst-table-th" data-sort="status">Status <span class="sort-icon">⇅</span></th>
+                                <th style="text-align: right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="institutesTableBody">
+                            <!-- Rows loaded dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination Footer -->
+                <div class="pagination-bar" id="paginationBar">
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <span style="font-size: 0.85rem; color: #64756A; font-weight: 600;" id="pageInfoText">Page 1 of 1</span>
+                        <select id="pageSizeSelect" class="toolbar-select" style="min-width: 80px; padding: 0.4rem 1.8rem 0.4rem 0.6rem; font-size: 0.8rem;">
+                            <option value="10">10 per page</option>
+                            <option value="25">25 per page</option>
+                            <option value="50">50 per page</option>
+                            <option value="100">100 per page</option>
+                        </select>
+                    </div>
+                    <div class="pagination-controls" id="paginationControls">
+                        <!-- Buttons rendered dynamically -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PENDING REGISTRATIONS SECTION -->
+        <section class="content-area hidden" id="sectionPending">
+            <div id="pendingLoader" class="loader-container hidden">
+                <div class="spinner"></div>
+            </div>
+            <div class="pending-info-box">
+                <span>👋</span>
+                <p>These teachers have registered and are awaiting your approval. Approve to assign them to an
+                    institute, or reject their request.</p>
+            </div>
+            <div id="pendingGrid" class="pending-grid"></div>
+        </section>
+
+
+    </main>
+
+    <!-- Add Institute Modal -->
+    <div class="modal-overlay hidden" id="addModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Create New Institute</h3>
+                <button class="close-modal" id="closeAddModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="addInstituteForm">
+                    <div class="form-group">
+                        <label class="form-label" for="name">Institute Name</label>
+                        <input type="text" id="name" class="form-input" required placeholder="e.g. Lahore Arts Academy">
+                    </div>
+                    <div class="form-group mb-4">
+                        <label class="form-label" for="type">Type</label>
+                        <input type="text" id="type" class="form-input" required
+                            placeholder="e.g. School, College, Academy">
+                    </div>
+                    <div class="form-group mb-6">
+                        <label class="form-label" for="expiryDate">Expiry Date (Optional)</label>
+                        <input type="date" id="expiryDate" class="form-input">
+                    </div>
+                    <div id="modalAlert" class="alert hidden"></div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelAddModalBtn">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="saveInstituteBtn" onclick="submitForm()">
+                            <span class="btn-text">Create Institute</span>
+                            <span class="btn-spinner hidden"></span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Institute Modal -->
+    <div class="modal-overlay hidden" id="editModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Edit Institute</h3>
+                <button class="close-modal" id="closeEditModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="editInstituteForm">
+                    <input type="hidden" id="editInstId">
+                    <div class="form-group">
+                        <label class="form-label" for="editName">Institute Name</label>
+                        <input type="text" id="editName" class="form-input" required>
+                    </div>
+                    <div class="form-group mb-4">
+                        <label class="form-label" for="editType">Type</label>
+                        <input type="text" id="editType" class="form-input" required>
+                    </div>
+                    <div class="form-group mb-6">
+                        <label class="form-label" for="editExpiryDate">Expiry Date (Optional)</label>
+                        <input type="date" id="editExpiryDate" class="form-input">
+                    </div>
+                    <div id="editModalAlert" class="alert hidden"></div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelEditModalBtn">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="updateInstituteBtn">
+                            <span class="btn-text">Save Changes</span>
+                            <span class="btn-spinner hidden"></span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Approve Modal -->
+    <div class="modal-overlay hidden" id="approveModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Approve & Create Institute</h3>
+                <button class="close-modal" id="closeApproveModalBtn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group mb-4">
+                    <label class="form-label">Teacher Email</label>
+                    <div style="padding:0.75rem 1rem; background:rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.05); border-radius:10px; font-size:0.875rem; font-weight: 600; color:#64756A;"
+                        id="approveEmail">—</div>
+                </div>
+                <input type="hidden" id="approveUid">
+
+                <div class="form-group mb-4">
+                    <label class="form-label" for="approveInstName">Institute Name</label>
+                    <input type="text" id="approveInstName" class="form-input" required placeholder="e.g. Darul Huda Academy" style="background:#ffffff;">
+                </div>
+
+                <div class="form-group mb-4">
+                    <label class="form-label" for="approveInstType">Institute Type</label>
+                    <select id="approveInstType" class="form-input" required style="background:#ffffff;">
+                        <option value="">— Select Type —</option>
+                        <option value="Madrasa">Madrasa</option>
+                        <option value="School">School</option>
+                        <option value="College">College</option>
+                        <option value="Arabic College">Arabic College</option>
+                        <option value="Islamic Center">Islamic Center</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+
+                <div class="form-group mb-4">
+                    <label class="form-label" for="approvePlanDuration">Plan Duration</label>
+                    <select id="approvePlanDuration" class="form-input" required style="background:#ffffff;">
+                        <option value="30">30 Days</option>
+                        <option value="90">90 Days</option>
+                        <option value="180">180 Days</option>
+                        <option value="365" selected>365 Days</option>
+                    </select>
+                </div>
+
+                <div style="margin-top: 1rem; padding: 0.85rem 1rem; background: rgba(67, 56, 202, 0.08); border: 1px solid rgba(67, 56, 202, 0.15); border-radius: 12px; font-size: 0.825rem; font-weight: 700; color: #064E3B; display: flex; align-items: center; gap: 8px;" id="approveExpiryPreview">
+                    📅 Expires on: —
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="cancelApproveBtn">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="confirmApproveBtn" style="background: linear-gradient(135deg, #064E3B, #059669); border:none; box-shadow: 0 4px 12px rgba(67,56,202,0.25);">
+                        <span class="btn-text">Approve & Create Institute</span>
+                        <span class="btn-spinner hidden"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- View Institute Details Modal -->
+    <div class="modal-overlay hidden" id="viewModal">
+        <div class="modal details-modal">
+            <div class="modal-header">
+                <h3>Institute Details</h3>
+                <button class="close-modal" id="closeViewModalBtn">&times;</button>
+            </div>
+            <div class="modal-body" id="viewModalBody">
+                <!-- Details dynamically rendered -->
+            </div>
+            <div class="modal-actions" style="margin-top: 1.5rem; border-top: 1px solid #D8E8DE; padding-top: 1rem;">
+                <button type="button" class="btn btn-secondary" id="closeViewModalFooterBtn">Close</button>
+                <button type="button" class="btn btn-primary" id="viewEditQuickBtn" style="background: linear-gradient(135deg, #059669, #065F46);">✏️ Edit Details</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Sidebar Overlay backdrop -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- Scripts -->
+    <script type="module" src="../js/firebase.js"></script>
+    <script type="module" src="../js/auth.js"></script>
+    <script type="module" src="../js/super-admin.js"></script>
+</body>
+
+</html>

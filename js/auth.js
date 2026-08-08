@@ -1,0 +1,678 @@
+import { auth, db } from './firebase.js';
+import {
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword,
+    signOut,
+    onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
+import {
+    doc, getDoc, setDoc, serverTimestamp, updateDoc
+} from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+
+// ─────────────────────────────────────────────
+// Dynamic Relative Path Helper
+// ─────────────────────────────────────────────
+const isSubFolder = window.location.pathname.includes('/pages/');
+const pathPrefix = isSubFolder ? '../' : './';
+
+
+// ─────────────────────────────────────────────
+// Safe sessionStorage Utilities
+// ─────────────────────────────────────────────
+export function canUseSessionStorage() {
+    try {
+        const storage = window.sessionStorage;
+        if (!storage) return false;
+        const testKey = '__storage_test__';
+        storage.setItem(testKey, testKey);
+        storage.removeItem(testKey);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+const isSessionStorageAvailable = canUseSessionStorage();
+
+export function safeSessionGet(key, fallback = null) {
+    if (!isSessionStorageAvailable) return fallback;
+    try {
+        return window.sessionStorage.getItem(key);
+    } catch (e) {
+        return fallback;
+    }
+}
+
+export function safeSessionSet(key, value) {
+    if (!isSessionStorageAvailable) return false;
+    try {
+        window.sessionStorage.setItem(key, value);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+export function safeSessionRemove(key) {
+    if (!isSessionStorageAvailable) return false;
+    try {
+        window.sessionStorage.removeItem(key);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+export function safeSessionClear() {
+    if (!isSessionStorageAvailable) return false;
+    try {
+        window.sessionStorage.removeItem('melad_auth_uid');
+        window.sessionStorage.removeItem('melad_user_profile');
+        window.sessionStorage.removeItem('melad_institute_status');
+        window.sessionStorage.removeItem('melad_last_validated');
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+
+// ─────────────────────────────────────────────
+// Utility: Alert display
+// ─────────────────────────────────────────────
+function showAlert(message, type = 'error') {
+    const alertBox = document.getElementById('alertMessage');
+    if (!alertBox) return;
+    alertBox.textContent = message;
+    alertBox.className = `alert alert-${type === 'error' ? 'error' : 'info'}`;
+    alertBox.classList.remove('hidden');
+}
+
+function hideAlert() {
+    const alertBox = document.getElementById('alertMessage');
+    if (alertBox) alertBox.classList.add('hidden');
+}
+
+// ─────────────────────────────────────────────
+// Promise Timeout Utility
+// ─────────────────────────────────────────────
+export function withTimeout(promise, ms = 8000, errorMessage = 'Operation timed out') {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(errorMessage)), ms))
+    ]);
+}
+
+// ─────────────────────────────────────────────
+// Helper function to retry Firestore reads on transient permission/auth errors
+// ─────────────────────────────────────────────
+async function getDocWithRetry(docRef, maxRetries = 3, initialDelayMs = 200) {
+    let delayMs = initialDelayMs;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return await withTimeout(getDoc(docRef), 6000, "Database request timed out");
+        } catch (error) {
+            const isPermissionError = error.code === 'permission-denied' || 
+                                     error.code === 'unauthenticated' ||
+                                     (error.message && error.message.toLowerCase().includes('permission'));
+            const isTimeout = error.message && error.message.includes('timed out');
+            if ((isPermissionError || isTimeout) && attempt < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+                delayMs = Math.min(delayMs * 2, 1000);
+                continue;
+            }
+            throw error;
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// Helper: Get user profile from Firestore
+// Returns null if not found (pending or missing)
+// ─────────────────────────────────────────────
+export async function getUserProfile(uid) {
+    if (!uid) return null;
+    try {
+        const cachedUid = safeSessionGet('melad_auth_uid');
+        const cachedProfile = safeSessionGet('melad_user_profile');
+        if (cachedUid === uid && cachedProfile) {
+            return JSON.parse(cachedProfile);
+        }
+
+        const userRef = doc(db, "users", uid);
+        const userSnap = await getDocWithRetry(userRef);
+        if (userSnap.exists()) {
+            const data = userSnap.data();
+            safeSessionSet('melad_auth_uid', uid);
+            safeSessionSet('melad_user_profile', JSON.stringify(data));
+            return data;
+        }
+        return null;
+    } catch (e) {
+        const isPermError = e && (
+            e.code === 'permission-denied' || 
+            e.code === 'unauthenticated' || 
+            (e.message && e.message.toLowerCase().includes('permission'))
+        );
+        if (!isPermError) {
+            console.error("Error fetching user profile:", e);
+        }
+        return null;
+    }
+}
+
+// ─────────────────────────────────────────────
+// Centralized Access Validation Helper
+// ─────────────────────────────────────────────
+export async function validateInstituteAccess(user) {
+    if (!user || user.isAnonymous) return false;
+    
+    try {
+        // Fast-path check: Super Admins bypass all constraints to prevent session clearing on expired/deactivated institutes
+        const cachedProfileStr = safeSessionGet('melad_user_profile');
+        if (cachedProfileStr) {
+            try {
+                const cachedProfile = JSON.parse(cachedProfileStr);
+                if (cachedProfile && cachedProfile.role === 'super_admin') {
+                    return true;
+                }
+            } catch (e) {}
+        }
+
+        const now = new Date().getTime();
+        const cachedUid = safeSessionGet('melad_auth_uid');
+        const cachedValidTime = safeSessionGet('melad_last_validated');
+        const cachedInstStatus = safeSessionGet('melad_institute_status');
+
+        // If cache is valid (TTL < 5 minutes)
+        if (cachedUid === user.uid && cachedValidTime && (now - parseInt(cachedValidTime, 10) < 300000) && cachedInstStatus) {
+            const instData = JSON.parse(cachedInstStatus);
+            const status = instData.status || 'active';
+            const expiryDateObj = instData.expiryDate ? new Date(instData.expiryDate) : null;
+            const isExpired = expiryDateObj && (now >= expiryDateObj.getTime());
+
+            if (isExpired || status !== 'active') {
+                safeSessionClear();
+                await signOut(auth);
+                return false;
+            }
+            return true;
+        }
+
+        // Database hit and cache prime on cache miss
+        const profile = await getUserProfile(user.uid);
+        if (!profile) {
+            // Check if they exist in the teachers collection
+            try {
+                const teacherRef = doc(db, "teachers", user.uid);
+                const teacherSnap = await getDocWithRetry(teacherRef);
+                if (teacherSnap && teacherSnap.exists()) {
+                    const teacherData = teacherSnap.data();
+                    const status = teacherData.status || 'pending';
+                    
+                    safeSessionClear();
+                    await signOut(auth);
+                    
+                    if (status === 'pending') {
+                        if (typeof showAlert === 'function' && document.getElementById('alertMessage')) {
+                            showAlert('Your registration is under review. Please wait for Super Admin approval.', 'info');
+                        }
+                        window.location.href = `${pathPrefix}pages/registration-complete.html`;
+                    } else if (status === 'rejected') {
+                        if (typeof showAlert === 'function' && document.getElementById('alertMessage')) {
+                            const reason = teacherData.rejectionReason || teacherData.message || '';
+                            const msg = reason ? `Your registration request has been rejected. Reason: ${reason}. Please contact the administrator.` : 'Your registration request has been rejected. Please contact the administrator.';
+                            showAlert(msg, 'error');
+                        }
+                    } else {
+                        if (typeof showAlert === 'function' && document.getElementById('alertMessage')) {
+                            showAlert('Invalid account configuration. Contact support.', 'error');
+                        }
+                    }
+                    return false;
+                }
+            } catch (err) {
+                // Teacher profile read restricted or missing
+            }
+
+            safeSessionClear();
+            await signOut(auth);
+            return false;
+        }
+
+        // Super admins have global bypass
+        if (profile.role === 'super_admin') {
+            safeSessionSet('melad_auth_uid', user.uid);
+            safeSessionSet('melad_last_validated', now.toString());
+            return true;
+        }
+
+        if (profile.role === 'admin') {
+            const instId = profile.instituteId;
+            if (!instId) {
+                safeSessionClear();
+                await signOut(auth);
+                return false;
+            }
+
+            const instRef = doc(db, "institutes", instId);
+            const instSnap = await getDocWithRetry(instRef);
+            if (!instSnap.exists()) {
+                safeSessionClear();
+                await signOut(auth);
+                return false;
+            }
+
+            const instData = instSnap.data();
+            const status = instData.status || 'active';
+            
+            // Timezone-safe UTC absolute timestamp comparison
+            const expiryDateObj = instData.expiryDate?.toDate?.() || (instData.expiryDate ? new Date(instData.expiryDate) : null);
+            const isExpired = expiryDateObj && (now >= expiryDateObj.getTime());
+
+            if (isExpired) {
+                // Auto-deactivate status in database to self-heal
+                if (status !== 'deactivated') {
+                    await updateDoc(instRef, { status: "deactivated" }).catch(e => {});
+                }
+                safeSessionClear();
+                await signOut(auth);
+                
+                // Show alert directly if on login/auth page, otherwise fall back to redirect
+                if (typeof showAlert === 'function' && document.getElementById('alertMessage')) {
+                    showAlert('Your institute subscription has expired. Please contact Super Admin.', 'error');
+                } else {
+                    window.location.href = `${pathPrefix}pages/login.html?error=expired`;
+                }
+                return false;
+            }
+
+            if (status !== 'active') {
+                safeSessionClear();
+                await signOut(auth);
+                
+                // Show alert directly if on login/auth page, otherwise fall back to redirect
+                if (typeof showAlert === 'function' && document.getElementById('alertMessage')) {
+                    showAlert('Your institute account has been deactivated. Please contact the administrator.', 'error');
+                } else {
+                    window.location.href = `${pathPrefix}pages/login.html?error=deactivated`;
+                }
+                return false;
+            }
+
+            // Cache valid state on success
+            safeSessionSet('melad_auth_uid', user.uid);
+            safeSessionSet('melad_institute_status', JSON.stringify({
+                status,
+                expiryDate: expiryDateObj ? expiryDateObj.toISOString() : null
+            }));
+            safeSessionSet('melad_last_validated', now.toString());
+
+            return true;
+        }
+
+        safeSessionClear();
+        await signOut(auth);
+        return false;
+    } catch (e) {
+        const isPermError = e && (
+            e.code === 'permission-denied' || 
+            e.code === 'unauthenticated' || 
+            (e.message && e.message.toLowerCase().includes('permission'))
+        );
+        if (!isPermError) {
+            console.error("Centralized Access Validation Error:", e);
+        }
+        safeSessionClear();
+        await signOut(auth);
+        return false;
+    }
+}
+
+// ─────────────────────────────────────────────
+// Utility: Logout (exported for dashboard use)
+// ─────────────────────────────────────────────
+export async function logoutUser() {
+    try {
+        safeSessionClear();
+        await signOut(auth);
+        window.location.href = `${pathPrefix}pages/login.html`;
+    } catch (error) {
+        console.error("Logout Error", error);
+    }
+}
+window.logoutUser = logoutUser;
+
+// ─────────────────────────────────────────────
+// Tab Switching Logic (login.html only)
+// ─────────────────────────────────────────────
+const tabLogin = document.getElementById('tabLogin');
+const tabRegister = document.getElementById('tabRegister');
+const loginForm = document.getElementById('loginForm');
+const registerForm = document.getElementById('registerForm');
+
+if (tabLogin && tabRegister) {
+    tabLogin.addEventListener('click', () => {
+        tabLogin.classList.add('active');
+        tabRegister.classList.remove('active');
+        loginForm.classList.remove('hidden');
+        registerForm.classList.add('hidden');
+        hideAlert();
+    });
+
+    tabRegister.addEventListener('click', () => {
+        tabRegister.classList.add('active');
+        tabLogin.classList.remove('active');
+        registerForm.classList.remove('hidden');
+        loginForm.classList.add('hidden');
+        hideAlert();
+    });
+}
+
+// ─────────────────────────────────────────────
+// LOGIN FORM HANDLER
+// ─────────────────────────────────────────────
+if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideAlert();
+
+        const email = document.getElementById('loginEmail').value.trim();
+        const password = document.getElementById('loginPassword').value;
+        const btn = document.getElementById('loginBtn');
+        const btnText = btn.querySelector('.btn-text');
+        const spinner = document.getElementById('loginSpinner');
+
+        btn.disabled = true;
+        btnText.classList.add('hidden');
+        spinner.classList.remove('hidden');
+
+        window.isLoggingIn = true;
+
+        const loginTask = async () => {
+            const userCredential = await withTimeout(
+                signInWithEmailAndPassword(auth, email, password),
+                10000,
+                'Sign in request timed out. Please check your network connection.'
+            );
+            const user = userCredential.user;
+
+            // Allow short tick for Auth ID Token to propagate to Firestore client state
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // 1. Run centralized validation
+            const isValid = await validateInstituteAccess(user);
+            if (!isValid) return;
+
+            // 2. Redirect if valid
+            const profile = await getUserProfile(user.uid);
+            if (!profile || !profile.role) {
+                await signOut(auth);
+                safeSessionClear();
+                showAlert('Login failed: User profile or role mapping is missing. Please contact administrator.');
+                return;
+            }
+
+            if (profile.role === 'super_admin') {
+                window.location.replace(`${pathPrefix}pages/super-admin.html`);
+            } else if (profile.role === 'admin') {
+                window.location.replace(`${pathPrefix}pages/admin-dashboard.html`);
+            } else {
+                await signOut(auth);
+                safeSessionClear();
+                showAlert('Invalid account configuration. Contact support.');
+            }
+        };
+
+        try {
+            await withTimeout(loginTask(), 15000, 'Login process timed out. Please check your connection and try again.');
+        } catch (error) {
+            console.error("Login Error:", error);
+            if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+                showAlert('Invalid email or password. Please try again.');
+            } else if (error.code === 'auth/too-many-requests') {
+                showAlert('Too many failed attempts. Please try again later.');
+            } else if (error.message && error.message.toLowerCase().includes('timed out')) {
+                showAlert(error.message);
+            } else {
+                showAlert('Login failed. Please check your credentials or network connection.');
+            }
+        } finally {
+            btn.disabled = false;
+            btnText.classList.remove('hidden');
+            spinner.classList.add('hidden');
+            window.isLoggingIn = false;
+        }
+    });
+}
+
+// ─────────────────────────────────────────────
+// REGISTER FORM HANDLER & VALIDATION
+// ─────────────────────────────────────────────
+const validators = {
+    regFullName: (val) => {
+        if (!val) return 'Full Name is required';
+        if (val.length < 3) return 'Full Name must be at least 3 characters';
+        return '';
+    },
+    regEmail: (val) => {
+        if (!val) return 'Email is required';
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(val)) return 'Please enter a valid email address';
+        return '';
+    },
+    regPhone: (val) => {
+        if (!val) return 'Phone Number is required';
+        const phoneRegex = /^\d+$/;
+        if (!phoneRegex.test(val)) return 'Phone Number must contain numeric digits only';
+        if (val.length < 10) return 'Phone Number must be at least 10 digits';
+        return '';
+    },
+    regPlace: (val) => {
+        if (!val) return 'Place / Location is required';
+        return '';
+    },
+    regPassword: (val) => {
+        if (!val) return 'Password is required';
+        if (val.length < 6) return 'Password must be at least 6 characters';
+        return '';
+    },
+    regConfirmPassword: (val) => {
+        if (!val) return 'Confirm Password is required';
+        const pass = document.getElementById('regPassword').value;
+        if (val !== pass) return 'Passwords do not match';
+        return '';
+    }
+};
+
+function validateField(id) {
+    const input = document.getElementById(id);
+    const errBox = document.getElementById(`err-${id}`);
+    if (!input || !errBox) return true;
+
+    const val = input.value.trim();
+    const errorMsg = validators[id](val);
+
+    if (errorMsg) {
+        input.classList.add('is-invalid');
+        input.classList.remove('is-valid');
+        errBox.textContent = '⚠ ' + errorMsg;
+        errBox.classList.add('visible');
+        return false;
+    } else {
+        input.classList.remove('is-invalid');
+        input.classList.add('is-valid');
+        errBox.textContent = '';
+        errBox.classList.remove('visible');
+        return true;
+    }
+}
+
+if (registerForm) {
+    const fieldsToValidate = ['regFullName', 'regEmail', 'regPhone', 'regPlace', 'regPassword', 'regConfirmPassword'];
+    
+    // Attach live input and blur validation listeners
+    fieldsToValidate.forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.addEventListener('input', () => {
+                validateField(id);
+                if (id === 'regPassword') {
+                    const confirmInput = document.getElementById('regConfirmPassword');
+                    if (confirmInput && confirmInput.value) {
+                        validateField('regConfirmPassword');
+                    }
+                }
+            });
+            input.addEventListener('blur', () => {
+                validateField(id);
+            });
+        }
+    });
+
+    registerForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideAlert();
+
+        // 1. Run all validations first
+        let formIsValid = true;
+        fieldsToValidate.forEach(id => {
+            if (!validateField(id)) {
+                formIsValid = false;
+            }
+        });
+
+        if (!formIsValid) {
+            showAlert('Please resolve all validation errors highlighted in red.');
+            return;
+        }
+
+        const email = document.getElementById('regEmail').value.trim();
+        const password = document.getElementById('regPassword').value;
+        const fullName = document.getElementById('regFullName').value.trim();
+        const phone = document.getElementById('regPhone').value.trim();
+        const place = document.getElementById('regPlace').value.trim();
+
+        const btn = document.getElementById('registerBtn');
+        const btnText = btn.querySelector('.btn-text');
+        const spinner = document.getElementById('registerSpinner');
+
+        btn.disabled = true;
+        btnText.classList.add('hidden');
+        spinner.classList.remove('hidden');
+
+        try {
+            window.isRegistering = true;
+            // 1. Create Firebase Auth account
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+
+            // 2. Write teachers collection document instead of pending_admins
+            await setDoc(doc(db, "teachers", user.uid), {
+                fullName: fullName,
+                email: email,
+                phone: phone,
+                place: place,
+                instituteName: "",
+                createdAt: serverTimestamp(),
+                status: "pending"
+            });
+
+            // 3. Sign out immediately — they are NOT yet approved
+            await signOut(auth);
+
+            // 4. Redirect to the registration-complete page
+            window.location.href = `${pathPrefix}pages/registration-complete.html`;
+
+        } catch (error) {
+            console.error("Registration Error:", error);
+            if (error.code === 'auth/email-already-in-use') {
+                showAlert('This email is already registered. Please sign in instead.');
+            } else if (error.code === 'auth/weak-password') {
+                showAlert('Password must be at least 6 characters long.');
+            } else {
+                showAlert(error.message);
+            }
+        } finally {
+            window.isRegistering = false;
+            btn.disabled = false;
+            btnText.classList.remove('hidden');
+            spinner.classList.add('hidden');
+        }
+    });
+}
+
+// ─────────────────────────────────────────────
+// Auto-redirect if already logged in (auth pages)
+// ─────────────────────────────────────────────
+const isAuthPage = window.location.pathname.includes('login.html') ||
+    window.location.pathname.endsWith('index.html') ||
+    window.location.pathname.endsWith('/') ||
+    window.location.pathname === '' ||
+    (!window.location.pathname.includes('.html') && !window.location.pathname.includes('/pages/'));
+
+function revealLoginUI() {
+    const loader = document.getElementById('authGateLoader');
+    const wrapper = document.getElementById('authWrapper') || document.querySelector('.auth-wrapper');
+    if (loader) loader.style.display = 'none';
+    if (wrapper) wrapper.style.display = 'block';
+}
+
+if (isAuthPage) {
+    onAuthStateChanged(auth, async (user) => {
+        if (window.isRegistering || window.isLoggingIn) return;
+        if (user) {
+            if (user.isAnonymous) {
+                revealLoginUI();
+                return;
+            }
+            try {
+                const isValid = await validateInstituteAccess(user);
+                if (isValid) {
+                    const profile = await getUserProfile(user.uid);
+                    if (!profile || !profile.role) {
+                        console.error("Auto-redirect failed: Profile or role missing");
+                        await signOut(auth);
+                        safeSessionClear();
+                        revealLoginUI();
+                        showAlert('Login failed: User profile or role mapping is missing. Please contact administrator.');
+                        return;
+                    }
+                    if (profile.role === 'super_admin') {
+                        window.location.replace(`${pathPrefix}pages/super-admin.html`);
+                    } else if (profile.role === 'admin') {
+                        window.location.replace(`${pathPrefix}pages/admin-dashboard.html`);
+                    } else {
+                        await signOut(auth);
+                        safeSessionClear();
+                        revealLoginUI();
+                        showAlert('Invalid account configuration. Contact support.');
+                    }
+                } else {
+                    revealLoginUI();
+                }
+            } catch (err) {
+                console.error("Auto-redirect check error:", err);
+                await signOut(auth);
+                safeSessionClear();
+                revealLoginUI();
+                showAlert('Authentication check failed. Please log in again.');
+            }
+        } else {
+            safeSessionClear();
+            revealLoginUI();
+        }
+    });
+}
+
+// ─────────────────────────────────────────────
+// Show Deactivation or Expiry Notice dynamically
+// ─────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('error') === 'deactivated') {
+        showAlert('Your institute account has been deactivated. Please contact the administrator.', 'error');
+    } else if (urlParams.get('error') === 'expired') {
+        showAlert('Your institute subscription has expired. Please contact Super Admin.', 'error');
+    }
+});

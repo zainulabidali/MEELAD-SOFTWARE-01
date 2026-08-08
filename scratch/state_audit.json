@@ -1,0 +1,900 @@
+{
+  "allPrograms": {
+    "reads": [
+      {
+        "line": 1003,
+        "code": "const progObj = allPrograms.find(p => p.id === f.programId);",
+        "func": "getScopeHtml"
+      },
+      {
+        "line": 2075,
+        "code": "const filtered = allPrograms.filter(p => {",
+        "func": "updateProgramsDropdown"
+      },
+      {
+        "line": 2215,
+        "code": "const programName = programId ? allPrograms.find(p => p.id === programId)?.programName : 'All';",
+        "func": "updateDisplay"
+      },
+      {
+        "line": 2252,
+        "code": "let filteredProgs = [...allPrograms];",
+        "func": "updateDisplay"
+      },
+      {
+        "line": 2254,
+        "code": "filteredProgs = allPrograms.filter(p => p.id === programId);",
+        "func": "updateDisplay"
+      },
+      {
+        "line": 2256,
+        "code": "filteredProgs = allPrograms.filter(p => {",
+        "func": "updateDisplay"
+      },
+      {
+        "line": 2790,
+        "code": "let targetPrograms = allPrograms;",
+        "func": "triggerDownload"
+      },
+      {
+        "line": 2792,
+        "code": "targetPrograms = allPrograms.filter(p => p.categoryId === f.categoryId || p.categoryId === 'general_programs' || p.programType === 'general');",
+        "func": "triggerDownload"
+      },
+      {
+        "line": 2810,
+        "code": "let programs = [...allPrograms];",
+        "func": "triggerDownload"
+      },
+      {
+        "line": 2812,
+        "code": "programs = allPrograms.filter(p => p.id === f.programId);",
+        "func": "triggerDownload"
+      },
+      {
+        "line": 2814,
+        "code": "programs = allPrograms.filter(p => {",
+        "func": "triggerDownload"
+      },
+      {
+        "line": 3145,
+        "code": "const prog = allPrograms.find(pr => pr.id === progId);",
+        "func": "buildColumnItems"
+      },
+      {
+        "line": 4768,
+        "code": "const prog = allPrograms.find(pr => pr.id === progId);",
+        "func": "updateTestCardDOM"
+      },
+      {
+        "line": 6795,
+        "code": "const prog = allPrograms.find(p => p.id === r.programId);",
+        "func": "renderWinnerRow"
+      },
+      {
+        "line": 6920,
+        "code": "const prog = allPrograms.find(p => p.id === r.programId);",
+        "func": "renderWinnerRow"
+      },
+      {
+        "line": 7116,
+        "code": "const prog = allPrograms.find(p => p.id === r.programId);",
+        "func": "getGradePriority"
+      },
+      {
+        "line": 7173,
+        "code": "const prog = allPrograms.find(p => p.id === r.programId);",
+        "func": "getGradePriority"
+      },
+      {
+        "line": 7282,
+        "code": "const prog = allPrograms.find(p => p.id === r.programId);",
+        "func": "getGradePriority"
+      },
+      {
+        "line": 7480,
+        "code": "const prog = allPrograms.find(p => p.id === r.programId);",
+        "func": "getGradePriority"
+      },
+      {
+        "line": 8178,
+        "code": "const prog = allPrograms.find(pr => pr.id === progId);",
+        "func": "compileCSV"
+      },
+      {
+        "line": 8522,
+        "code": "const prog = allPrograms.find(p => p.id === r.programId);",
+        "func": "isRegistered"
+      },
+      {
+        "line": 8619,
+        "code": "const prog = allPrograms.find(p => p.id === r.programId);",
+        "func": "getGradePriority"
+      },
+      {
+        "line": 8665,
+        "code": "const prog = allPrograms.find(p => p.id === r.programId);",
+        "func": "getGradePriority"
+      },
+      {
+        "line": 8734,
+        "code": "const prog = allPrograms.find(p => p.id === r.programId);",
+        "func": "getGradePriority"
+      },
+      {
+        "line": 8875,
+        "code": "const prog = allPrograms.find(p => p.id === r.programId);",
+        "func": "getGradePriority"
+      },
+      {
+        "line": 9118,
+        "code": "const prog = allPrograms.find(p => p.id === r.programId);",
+        "func": "filterResultsBySource"
+      }
+    ],
+    "writes": [
+      {
+        "line": 18,
+        "code": "let allPrograms = [];",
+        "func": "formatLabel"
+      },
+      {
+        "line": 800,
+        "code": "allPrograms = programs.map(p => {",
+        "func": "loadStaticData"
+      },
+      {
+        "line": 2787,
+        "code": "if (!allPrograms || allPrograms.length === 0) {",
+        "func": "triggerDownload"
+      },
+      {
+        "line": 2788,
+        "code": "allPrograms = await getCachedPrograms(instId) || [];",
+        "func": "triggerDownload"
+      }
+    ],
+    "functions": [
+      "updateDisplay",
+      "isRegistered",
+      "loadStaticData",
+      "buildColumnItems",
+      "getGradePriority",
+      "compileCSV",
+      "getScopeHtml",
+      "updateTestCardDOM",
+      "filterResultsBySource",
+      "updateProgramsDropdown",
+      "formatLabel",
+      "triggerDownload",
+      "renderWinnerRow"
+    ]
+  },
+  "allCategories": {
+    "reads": [
+      {
+        "line": 958,
+        "code": "const catObj = allCategories.find(c => c.id === f.categoryId);",
+        "func": "getScopeHtml"
+      },
+      {
+        "line": 980,
+        "code": "const catObj = allCategories.find(c => c.id === f.categoryId);",
+        "func": "getScopeHtml"
+      },
+      {
+        "line": 987,
+        "code": "for (const cat of allCategories) {",
+        "func": "getScopeHtml"
+      },
+      {
+        "line": 1343,
+        "code": "allCategories.forEach(c => {",
+        "func": "renderDrawerContent"
+      },
+      {
+        "line": 2014,
+        "code": "allCategories.forEach(cat => {",
+        "func": "updateClassFilterState"
+      },
+      {
+        "line": 2031,
+        "code": "const cat = allCategories.find(c => c.id === catId);",
+        "func": "updateClassFilterState"
+      },
+      {
+        "line": 2202,
+        "code": "const categoryName = categoryId === 'general_programs' ? 'General' : (categoryId ? allCategories.find(c => c.id === categoryId)?.name : 'All');",
+        "func": "updateDisplay"
+      },
+      {
+        "line": 2206,
+        "code": "for (const cat of allCategories) {",
+        "func": "updateDisplay"
+      },
+      {
+        "line": 2923,
+        "code": "const catIndex = allCategories.findIndex(c =>",
+        "func": "getCategoryMinClassSortInfo"
+      },
+      {
+        "line": 2926,
+        "code": "const cat = catIndex !== -1 ? allCategories[catIndex] : null;",
+        "func": "getCategoryMinClassSortInfo"
+      },
+      {
+        "line": 3818,
+        "code": "const idxA = allCategories.findIndex(c => c.id === a);",
+        "func": "updateTestCardDOM"
+      },
+      {
+        "line": 3819,
+        "code": "const idxB = allCategories.findIndex(c => c.id === b);",
+        "func": "updateTestCardDOM"
+      },
+      {
+        "line": 3910,
+        "code": "const idxA = allCategories.findIndex(c => c.id === a);",
+        "func": "updateTestCardDOM"
+      },
+      {
+        "line": 3911,
+        "code": "const idxB = allCategories.findIndex(c => c.id === b);",
+        "func": "updateTestCardDOM"
+      },
+      {
+        "line": 4617,
+        "code": "const cat = allCategories.find(c => c.id === p.categoryId);",
+        "func": "updateTestCardDOM"
+      },
+      {
+        "line": 4662,
+        "code": "? (f.categoryId === 'general_programs' ? 'GENERAL PROGRAMS' : (allCategories.find(c => c.id === f.categoryId)?.name || 'SELECTED CATEGORY').toUpperCase())",
+        "func": "updateTestCardDOM"
+      },
+      {
+        "line": 4730,
+        "code": "const targetCat = allCategories.find(c => c.id === f.categoryId);",
+        "func": "updateTestCardDOM"
+      },
+      {
+        "line": 4839,
+        "code": "? (allCategories.find(c => c.id === f.categoryId)?.name || f.categoryId).toUpperCase()",
+        "func": "updateTestCardDOM"
+      },
+      {
+        "line": 5347,
+        "code": "const idxA = allCategories.findIndex(c => c.id === a);",
+        "func": "chunkArray"
+      },
+      {
+        "line": 5348,
+        "code": "const idxB = allCategories.findIndex(c => c.id === b);",
+        "func": "chunkArray"
+      },
+      {
+        "line": 5567,
+        "code": "const idxA = allCategories.findIndex(c => c.id === a);",
+        "func": "chunkArray"
+      },
+      {
+        "line": 5568,
+        "code": "const idxB = allCategories.findIndex(c => c.id === b);",
+        "func": "chunkArray"
+      },
+      {
+        "line": 6571,
+        "code": "allCategories.forEach(cat => {",
+        "func": "buildAuditRow"
+      },
+      {
+        "line": 6792,
+        "code": "allCategories.forEach(c => categoryScores.set(c.id, new Map()));",
+        "func": "renderWinnerRow"
+      },
+      {
+        "line": 6847,
+        "code": "allCategories.forEach(cat => {",
+        "func": "renderWinnerRow"
+      },
+      {
+        "line": 8011,
+        "code": "const idxA = allCategories.findIndex(c => c.id === a.categoryId || c.name === a.categoryId || c.name === a.categoryName);",
+        "func": "compileCSV"
+      },
+      {
+        "line": 8012,
+        "code": "const idxB = allCategories.findIndex(c => c.id === b.categoryId || c.name === b.categoryId || c.name === b.categoryName);",
+        "func": "compileCSV"
+      },
+      {
+        "line": 8074,
+        "code": "const cat = allCategories.find(c => c.id === p.categoryId);",
+        "func": "compileCSV"
+      },
+      {
+        "line": 8140,
+        "code": "const targetCat = allCategories.find(c => c.id === f.categoryId);",
+        "func": "compileCSV"
+      },
+      {
+        "line": 8405,
+        "code": "const idxA = allCategories.findIndex(c => c.id === a.categoryId || c.name === a.categoryId || c.name === a.categoryName);",
+        "func": "isRegistered"
+      },
+      {
+        "line": 8406,
+        "code": "const idxB = allCategories.findIndex(c => c.id === b.categoryId || c.name === b.categoryId || c.name === b.categoryName);",
+        "func": "isRegistered"
+      },
+      {
+        "line": 8918,
+        "code": "const idxA = allCategories.findIndex(c => c.name === catA);",
+        "func": "getGradePriority"
+      },
+      {
+        "line": 8919,
+        "code": "const idxB = allCategories.findIndex(c => c.name === catB);",
+        "func": "getGradePriority"
+      },
+      {
+        "line": 8982,
+        "code": "allCategories.forEach(cat => {",
+        "func": "getGradePriority"
+      }
+    ],
+    "writes": [
+      {
+        "line": 19,
+        "code": "let allCategories = [];",
+        "func": "formatLabel"
+      },
+      {
+        "line": 792,
+        "code": "allCategories = categories.map(c => ({",
+        "func": "loadStaticData"
+      }
+    ],
+    "functions": [
+      "updateDisplay",
+      "isRegistered",
+      "loadStaticData",
+      "chunkArray",
+      "getGradePriority",
+      "renderDrawerContent",
+      "compileCSV",
+      "getScopeHtml",
+      "updateTestCardDOM",
+      "buildAuditRow",
+      "formatLabel",
+      "renderWinnerRow",
+      "getCategoryMinClassSortInfo",
+      "updateClassFilterState"
+    ]
+  },
+  "allTeams": {
+    "reads": [
+      {
+        "line": 153,
+        "code": "allTeams.forEach(t => {",
+        "func": "renderTeamBgCards"
+      },
+      {
+        "line": 1010,
+        "code": "const teamObj = allTeams.find(t => t.id === f.teamId);",
+        "func": "getScopeHtml"
+      },
+      {
+        "line": 1348,
+        "code": "allTeams.forEach(t => {",
+        "func": "renderDrawerContent"
+      },
+      {
+        "line": 1672,
+        "code": "allTeams.forEach(t => {",
+        "func": "updateTeamBgVisibility"
+      },
+      {
+        "line": 2218,
+        "code": "const teamName = teamId ? allTeams.find(t => t.id === teamId)?.name : 'All';",
+        "func": "updateDisplay"
+      },
+      {
+        "line": 2465,
+        "code": "const activeTeamIds = new Set((allTeams || []).map(t => t.id));",
+        "func": "loadParticipants"
+      },
+      {
+        "line": 3110,
+        "code": "allTeams.forEach(t => {",
+        "func": "buildColumnItems"
+      },
+      {
+        "line": 4723,
+        "code": "allTeams.forEach(t => {",
+        "func": "updateTestCardDOM"
+      },
+      {
+        "line": 4955,
+        "code": "const teamName = f.teamId ? (allTeams.find(t => t.id === f.teamId)?.name || '') : '';",
+        "func": "isRegistered"
+      },
+      {
+        "line": 5291,
+        "code": "allTeams.forEach(t => {",
+        "func": "chunkArray"
+      },
+      {
+        "line": 6791,
+        "code": "allTeams.forEach(t => teamPoints.set(t.name, 0));",
+        "func": "renderWinnerRow"
+      },
+      {
+        "line": 7446,
+        "code": "allTeams.forEach(t => {",
+        "func": "getGradePriority"
+      },
+      {
+        "line": 8004,
+        "code": "allTeams.forEach(t => {",
+        "func": "compileCSV"
+      },
+      {
+        "line": 8133,
+        "code": "allTeams.forEach(t => {",
+        "func": "compileCSV"
+      },
+      {
+        "line": 8325,
+        "code": "const teamName = f.teamId ? (allTeams.find(t => t.id === f.teamId)?.name || '') : '';",
+        "func": "isRegistered"
+      },
+      {
+        "line": 8399,
+        "code": "allTeams.forEach(t => {",
+        "func": "isRegistered"
+      },
+      {
+        "line": 8841,
+        "code": "allTeams.forEach(t => {",
+        "func": "getGradePriority"
+      }
+    ],
+    "writes": [
+      {
+        "line": 20,
+        "code": "let allTeams = [];",
+        "func": "formatLabel"
+      },
+      {
+        "line": 820,
+        "code": "allTeams = await getCachedTeams(instId, force) || [];",
+        "func": "loadStaticData"
+      }
+    ],
+    "functions": [
+      "updateDisplay",
+      "isRegistered",
+      "loadStaticData",
+      "buildColumnItems",
+      "chunkArray",
+      "getGradePriority",
+      "renderDrawerContent",
+      "compileCSV",
+      "loadParticipants",
+      "getScopeHtml",
+      "updateTestCardDOM",
+      "renderTeamBgCards",
+      "formatLabel",
+      "updateTeamBgVisibility",
+      "renderWinnerRow"
+    ]
+  },
+  "allAwardTypes": {
+    "reads": [
+      {
+        "line": 1459,
+        "code": "${allAwardTypes.map(t => `",
+        "func": "renderDrawerContent"
+      },
+      {
+        "line": 2319,
+        "code": "const found = allAwardTypes.find(t => t.id === val);",
+        "func": "cleanName"
+      }
+    ],
+    "writes": [
+      {
+        "line": 21,
+        "code": "let allAwardTypes = [];",
+        "func": "formatLabel"
+      },
+      {
+        "line": 1300,
+        "code": "allAwardTypes = [",
+        "func": "refreshAwardTypesConfig"
+      },
+      {
+        "line": 1309,
+        "code": "allAwardTypes = data.awardTypes;",
+        "func": "refreshAwardTypesConfig"
+      }
+    ],
+    "functions": [
+      "cleanName",
+      "refreshAwardTypesConfig",
+      "renderDrawerContent",
+      "formatLabel"
+    ]
+  },
+  "unsubscribeExports": {
+    "reads": [
+      {
+        "line": 582,
+        "code": "if (unsubscribeExports) {",
+        "func": "initExportsView"
+      },
+      {
+        "line": 583,
+        "code": "unsubscribeExports();",
+        "func": "initExportsView"
+      },
+      {
+        "line": 771,
+        "code": "if (unsubscribeExports) {",
+        "func": "handleScroll"
+      },
+      {
+        "line": 772,
+        "code": "unsubscribeExports();",
+        "func": "handleScroll"
+      }
+    ],
+    "writes": [
+      {
+        "line": 22,
+        "code": "let unsubscribeExports = null;",
+        "func": "formatLabel"
+      },
+      {
+        "line": 584,
+        "code": "unsubscribeExports = null;",
+        "func": "initExportsView"
+      },
+      {
+        "line": 773,
+        "code": "unsubscribeExports = null;",
+        "func": "handleScroll"
+      },
+      {
+        "line": 842,
+        "code": "unsubscribeExports = onSnapshot(ref, (snapshot) => {",
+        "func": "subscribeExportsHistory"
+      }
+    ],
+    "functions": [
+      "subscribeExportsHistory",
+      "initExportsView",
+      "formatLabel",
+      "handleScroll"
+    ]
+  },
+  "exportsList": {
+    "reads": [
+      {
+        "line": 856,
+        "code": "const total = exportsList.length;",
+        "func": "renderExportStats"
+      },
+      {
+        "line": 861,
+        "code": "const todayCount = exportsList.filter(e => {",
+        "func": "renderExportStats"
+      },
+      {
+        "line": 868,
+        "code": "const pdfCount = exportsList.filter(e => e.fileName && e.fileName.toLowerCase().endsWith('.pdf')).length;",
+        "func": "renderExportStats"
+      },
+      {
+        "line": 869,
+        "code": "const csvCount = exportsList.filter(e => e.fileName && e.fileName.toLowerCase().endsWith('.csv')).length;",
+        "func": "renderExportStats"
+      },
+      {
+        "line": 917,
+        "code": "let filtered = exportsList.filter(e => {",
+        "func": "renderHistoryLogs"
+      },
+      {
+        "line": 1166,
+        "code": "const exp = exportsList.find(x => x.id === id);",
+        "func": "getFormattedDateHtml"
+      },
+      {
+        "line": 1249,
+        "code": "const exp = exportsList.find(x => x.id === id);",
+        "func": "openExportsDropdown"
+      },
+      {
+        "line": 1256,
+        "code": "const exp = exportsList.find(x => x.id === id);",
+        "func": "openExportsDropdown"
+      },
+      {
+        "line": 1263,
+        "code": "const exp = exportsList.find(x => x.id === id);",
+        "func": "openExportsDropdown"
+      }
+    ],
+    "writes": [
+      {
+        "line": 23,
+        "code": "let exportsList = [];",
+        "func": "formatLabel"
+      },
+      {
+        "line": 843,
+        "code": "exportsList = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));",
+        "func": "subscribeExportsHistory"
+      },
+      {
+        "line": 913,
+        "code": "clearBtn.disabled = exportsList.length === 0;",
+        "func": "renderHistoryLogs"
+      }
+    ],
+    "functions": [
+      "renderExportStats",
+      "renderHistoryLogs",
+      "getFormattedDateHtml",
+      "formatLabel",
+      "subscribeExportsHistory",
+      "openExportsDropdown"
+    ]
+  },
+  "searchVal": {
+    "reads": [
+      {
+        "line": 619,
+        "code": "<input type=\"text\" id=\"expSearchInput\" class=\"exp-input\" placeholder=\"Type here to search...\" value=\"${window.escapeHTML(searchVal)}\">",
+        "func": "initExportsView"
+      },
+      {
+        "line": 920,
+        "code": "if (searchVal) {",
+        "func": "renderHistoryLogs"
+      },
+      {
+        "line": 921,
+        "code": "const queryClean = searchVal.toLowerCase();",
+        "func": "renderHistoryLogs"
+      }
+    ],
+    "writes": [
+      {
+        "line": 26,
+        "code": "let searchVal = '';",
+        "func": "formatLabel"
+      },
+      {
+        "line": 705,
+        "code": "searchVal = e.target.value;",
+        "func": "initExportsView"
+      }
+    ],
+    "functions": [
+      "initExportsView",
+      "renderHistoryLogs",
+      "formatLabel"
+    ]
+  },
+  "filterTypeVal": {
+    "reads": [
+      {
+        "line": 710,
+        "code": "fType.value = filterTypeVal;",
+        "func": "initExportsView"
+      },
+      {
+        "line": 918,
+        "code": "if (filterTypeVal && e.type !== filterTypeVal) return false;",
+        "func": "renderHistoryLogs"
+      }
+    ],
+    "writes": [
+      {
+        "line": 27,
+        "code": "let filterTypeVal = '';",
+        "func": "formatLabel"
+      },
+      {
+        "line": 712,
+        "code": "filterTypeVal = e.target.value;",
+        "func": "initExportsView"
+      }
+    ],
+    "functions": [
+      "initExportsView",
+      "renderHistoryLogs",
+      "formatLabel"
+    ]
+  },
+  "filterStatusVal": {
+    "reads": [
+      {
+        "line": 717,
+        "code": "fStatus.value = filterStatusVal;",
+        "func": "initExportsView"
+      },
+      {
+        "line": 919,
+        "code": "if (filterStatusVal && e.status !== filterStatusVal) return false;",
+        "func": "renderHistoryLogs"
+      }
+    ],
+    "writes": [
+      {
+        "line": 28,
+        "code": "let filterStatusVal = '';",
+        "func": "formatLabel"
+      },
+      {
+        "line": 719,
+        "code": "filterStatusVal = e.target.value;",
+        "func": "initExportsView"
+      }
+    ],
+    "functions": [
+      "initExportsView",
+      "renderHistoryLogs",
+      "formatLabel"
+    ]
+  },
+  "sortByVal": {
+    "reads": [
+      {
+        "line": 724,
+        "code": "sSort.value = sortByVal;",
+        "func": "initExportsView"
+      }
+    ],
+    "writes": [
+      {
+        "line": 29,
+        "code": "let sortByVal = 'newest';",
+        "func": "formatLabel"
+      },
+      {
+        "line": 726,
+        "code": "sortByVal = e.target.value;",
+        "func": "initExportsView"
+      },
+      {
+        "line": 933,
+        "code": "return sortByVal === 'newest' ? secB - secA : secA - secB;",
+        "func": "renderHistoryLogs"
+      }
+    ],
+    "functions": [
+      "initExportsView",
+      "renderHistoryLogs",
+      "formatLabel"
+    ]
+  },
+  "teamBackgroundsCache": {
+    "reads": [
+      {
+        "line": 127,
+        "code": "const base64 = teamBackgroundsCache[teamId];",
+        "func": "updateTeamCardUI"
+      },
+      {
+        "line": 180,
+        "code": "delete teamBackgroundsCache[t.id];",
+        "func": "renderTeamBgCards"
+      },
+      {
+        "line": 181,
+        "code": "localStorage.setItem('meelad_team_card_backgrounds', JSON.stringify(teamBackgroundsCache));",
+        "func": "renderTeamBgCards"
+      },
+      {
+        "line": 200,
+        "code": "teamBackgroundsCache[t.id] = base64Str;",
+        "func": "renderTeamBgCards"
+      },
+      {
+        "line": 201,
+        "code": "localStorage.setItem('meelad_team_card_backgrounds', JSON.stringify(teamBackgroundsCache));",
+        "func": "renderTeamBgCards"
+      },
+      {
+        "line": 3581,
+        "code": "if (f.enableTeamBg && teamBackgroundsCache && teamBackgroundsCache[stu.teamId]) {",
+        "func": "getTeamThemeIndex"
+      },
+      {
+        "line": 3583,
+        "code": "<div style=\"position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background-image: url('${teamBackgroundsCache[stu.teamId]}'); background-size: cover; background-position: center; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;\" aria-hidden=\"true\"></div>",
+        "func": "getTeamThemeIndex"
+      }
+    ],
+    "writes": [
+      {
+        "line": 32,
+        "code": "let teamBackgroundsCache = {};",
+        "func": "formatLabel"
+      },
+      {
+        "line": 60,
+        "code": "teamBackgroundsCache = JSON.parse(stored);",
+        "func": "loadTeamBackgrounds"
+      },
+      {
+        "line": 62,
+        "code": "teamBackgroundsCache = {};",
+        "func": "loadTeamBackgrounds"
+      },
+      {
+        "line": 66,
+        "code": "teamBackgroundsCache = {};",
+        "func": "loadTeamBackgrounds"
+      },
+      {
+        "line": 1670,
+        "code": "teamBackgroundsCache = {};",
+        "func": "updateTeamBgVisibility"
+      }
+    ],
+    "functions": [
+      "getTeamThemeIndex",
+      "loadTeamBackgrounds",
+      "updateTeamCardUI",
+      "renderTeamBgCards",
+      "formatLabel",
+      "updateTeamBgVisibility"
+    ]
+  },
+  "isTeamBgEnabled": {
+    "reads": [
+      {
+        "line": 1660,
+        "code": "expEnableTeamBg.checked = isTeamBgEnabled;",
+        "func": "updateTeamBgVisibility"
+      },
+      {
+        "line": 1663,
+        "code": "teamBgManagerContent.style.display = isTeamBgEnabled ? 'flex' : 'none';",
+        "func": "updateTeamBgVisibility"
+      },
+      {
+        "line": 2372,
+        "code": "enableTeamBg: isTeamBgEnabled",
+        "func": "cleanName"
+      }
+    ],
+    "writes": [
+      {
+        "line": 33,
+        "code": "let isTeamBgEnabled = false;",
+        "func": "formatLabel"
+      },
+      {
+        "line": 1657,
+        "code": "isTeamBgEnabled = false;",
+        "func": "updateTeamBgVisibility"
+      },
+      {
+        "line": 1662,
+        "code": "isTeamBgEnabled = expEnableTeamBg.checked;",
+        "func": "updateTeamBgVisibility"
+      }
+    ],
+    "functions": [
+      "updateTeamBgVisibility",
+      "formatLabel",
+      "cleanName"
+    ]
+  }
+}

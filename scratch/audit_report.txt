@@ -1,0 +1,178 @@
+--- formatLabel ---
+function formatLabel(str) {
+    if (!str) return 'General';
+    return str
+        .replace(/[-_]/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// ─────────────────────────────────────────────
+// Module State
+// ─────────────────────────────────────────────
+let unsubscribeExports = null;
+let exportsList = [];
+
+// Filter / Search states
+// Team Background Manager state
+let teamBackgroundsCache = {};
+let isTeamBgEnabled = false;
+
+async function ensureEventDetailsLoaded(force = false) {
+    if ((!window.currentEventDetails || force) && window.currentInstituteId) {
+        try {
+            const configSnap = await getDoc(doc(db, "institutes", window.currentInstituteId, "metadata", "eventConfig"));
+            if (configSnap.exists()) {
+                window.currentEventDetails = configSnap.data();
+            }
+        } catch (err) {
+            console.error("Error loading eventConfig in exports:", err);
+        }
+    }
+}
+
+function getEventName() {
+    const evName = wind
+
+--- resizeImageIfNeeded ---
+function resizeImageIfNeeded(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            const img = new Image();
+            img.onload = function () {
+                const maxDim = 1200;
+                let width = img.width;
+                let height = img.height;
+
+                if (file.size > 5 * 1024 * 1024 || width > maxDim || height > maxDim) {
+                    if (width > height) {
+                        if (width > maxDim) {
+                            height = Math.round((height * maxDim) / width);
+                            width = maxDim;
+                        }
+                    } else {
+                        if (height > maxDim) {
+                            width = Math.round((width * maxDim) / height);
+                            height = maxDim;
+                        }
+                    }
+                }
+
+                const canvas = document.createElement('can
+
+--- chunkArray ---
+const chunkArray = (array, size) => {
+                const chunks = [];
+                for (let i = 0; i < array.length; i += size) {
+                    chunks.push(array.slice(i, i + size));
+                }
+                return chunks;
+            };
+
+            // 1. Filter students
+            let studentsList = Object.values(studentMap);
+
+            if (f.categoryId === 'general_programs' || f.participationType === 'general') {
+                const registeredStudentIds = new Set();
+                matchingPrograms.forEach(p => {
+                    const parts = participantsMap[p.id] || [];
+                    parts.forEach(part => {
+                        if (part.isGroup) {
+                            (part.members || []).forEach(m => {
+                                if (m.studentId) registeredStudentIds.add(m.studentId);
+                            });
+                        } else {
+                            if (part.studentId) registeredStudentIds.add(part.stude
+
+--- cleanName ---
+const cleanName = (str) => str.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
+
+        let fileTypePrefix = cleanName(selectedType);
+        if (selectedType === 'Results') {
+            fileTypePrefix = cleanName(resultSubOption);
+        } else if (selectedType === 'Program Participation Register') {
+            if (progRegSubmode === 'list') {
+                fileTypePrefix = 'PROGRAM_LIST';
+            } else if (progRegSubmode === 'student_summary') {
+                fileTypePrefix = 'STUDENT_WISE_PARTICIPATION_SUMMARY';
+            } else {
+                fileTypePrefix = `${cleanName(selectedType)}_${cleanName(registerMode)}`;
+            }
+        } else if (selectedType === 'Chest Number List') {
+            if (activeSubmode === 'card') {
+                fileTypePrefix = 'CHEST_NUMBER_PROGRAM_CARD';
+            } else {
+                fileTypePrefix = `${cleanName(selectedType)}_${cleanName(chestMode)}`;
+            }
+        }
+
+        let scopeText = '';
+        if (program
+
+--- getTextWidth ---
+const getTextWidth = (text, font) => {
+                    ctx.font = font;
+                    return ctx.measureText(text).width;
+                };
+
+                // Pre-verify Poppins font loading from Google Fonts before measuring layouts
+                if (document.fonts && document.fonts.load) {
+                    try {
+                        await Promise.all([
+                            document.fonts.load('400 14px "Poppins"'),
+                            document.fonts.load('500 14px "Poppins"'),
+                            document.fonts.load('600 14px "Poppins"'),
+                            document.fonts.load('700 14px "Poppins"'),
+                            document.fonts.load('800 14px "Poppins"')
+                        ]);
+                        await document.fonts.ready;
+                    } catch (fontErr) {
+                        console.warn('Poppins font verification warning:', fontErr);
+                    }
+                }
+
+                // Crea
+
+--- getStatusBadge ---
+const getStatusBadge = (status) => {
+        if (status === 'Pending') return '<span class="badge" style="background:#ECFDF5; color:#64756A; border:1px solid #D8E8DE; font-weight:700;">⌛ Pending</span>';
+        if (status === 'Processing') return '<span class="badge" style="background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; font-weight:700;">⚙️ Processing</span>';
+        if (status === 'Completed') return '<span class="badge" style="background:#ECFDF5; color:#047857; border:1px solid #bbf7d0; font-weight:700;">✅ Completed</span>';
+        if (status === 'Failed') return '<span class="badge" style="background:#fef2f2; color:#EF4444; border:1px solid #fecaca; font-weight:700;">❌ Failed</span>';
+        return `<span class="badge">${status}</span>`;
+    };
+
+    // Helper: resolve Scope information
+    const getScopeHtml = (exp) => {
+        const f = exp.filters || {};
+
+        // Category Name
+        let categoryName = 'All Categories';
+        if (f.categoryId) {
+          
+
+--- getFormattedDateHtml ---
+const getFormattedDateHtml = (queuedAt) => {
+        if (!queuedAt) return '—';
+        const dateObj = new Date(queuedAt.seconds * 1000);
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+
+        let hours = dateObj.getHours();
+        const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        hours = hours ? hours : 12; // hour '0' -> '12'
+
+        return `
+            <div style="font-weight:600; color:#17251B; font-size:0.82rem;">${day}/${month}</div>
+            <div style="font-size:0.72rem; color:#64756A; font-weight:500; margin-top:0.1rem;">${hours}:${minutes} ${ampm}</div>
+        `;
+    };
+
+    // 1. Render Desktop Grid
+    tbody.innerHTML = filtered.map(exp => {
+        const f = exp.filters || {};
+        let displayType = exp.type || 'Unknown Export';
+        if (displayType === 'Chest Number List' && 
+

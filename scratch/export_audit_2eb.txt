@@ -1,0 +1,164 @@
+--- simulateExportProcessing ---
+async function simulateExportProcessing(docId) {
+    const instId = window.currentInstituteId;
+    const docRef = doc(db, "institutes", instId, "exports", docId);
+
+    // Transitions from Pending ➔ Processing after 400ms
+    setTimeout(async () => {
+        try {
+            await updateDoc(docRef, { status: 'Processing' });
+
+            // Transitions to Completed after 900ms
+            setTimeout(async () => {
+                try {
+                    const elapsed = (Math.random() * 0.4 + 0.5).toFixed(1);
+                    await updateDoc(docRef, {
+                        status: 'Completed',
+                        completedIn: `${elapsed}s`
+                    });
+                    window.showToast("⚡ Export document generated successfully!", "success");
+                } catch (e) {
+                    await updateDoc(docRef, { status: 'Failed' });
+                }
+            }, 900);
+
+        } catch (e) {
+            await updateDoc(docRef, { status: 'Failed' });
+        }
+    }, 400);
+}
+
+--- triggerDownload ---
+async function triggerDownload(exp, isDownload = false) {
+    loadTeamBackgrounds();
+    await ensureEventDetailsLoaded();
+    window.showToast(`Loading data for ${exp.fileName}...`, "info");
+    const instId = window.currentInstituteId;
+
+    try {
+        const f = exp.filters;
+        if (!f) throw new Error("Filters parameters are missing.");
+
+        if (f.type === 'Chest Number List') {
+            let studentMap = {};
+            try {
+                const studentsSnap = await getDocs(collection(db, "institutes", instId, "students"));
+                studentsSnap.forEach(d => {
+                    studentMap[d.id] = { id: d.id, ...d.data() };
+                });
+            } catch (err) {
+                console.error("Failed to load students collection:", err);
+            }
+
+            if (Object.keys(studentMap).length === 0) {
+                window.showToast("No students found in the database.", "warning");
+                return;
+            }
+
+            let participantsMap = {};
+            if (f.chestSubmode === 'card') {
+                if (!state.allPrograms || state.allPrograms.length === 0) {
+                    state.allPrograms = await getCachedPrograms(instId) || [];
+                }
+                let targetPrograms = state.allPrograms;
+                if (f.categoryId) {
+                    targetPrograms = state.allPrograms.filter(p => p.categoryId === f.categoryId || p.categoryId === 'general_programs' || p.programType === 'general');
+                }
+                const participantPromises = targetPrograms.map(p => loadParticipants(p, f.teamId, studentMap));
+                const allParts = await Promise.all(participantPromises);
+                targetPrograms.forEach((p, idx) => {
+                    participantsMap[p.id] = allParts[idx];
+                });
+            }
+
+            if (f.format === 'csv') {
+                compileCSV(exp, f, [], [], {}, studentMap);
+            } else {
+                compilePDF(exp, f, [], [], participantsMap, studentMap, isDownload);
+            }
+            return;
+        }
+
+        // 1. Fetch matching programs list
+        let programs = [...allPrograms];
+        if (f.programId) {
+            programs = state.allPrograms.filter(p => p.id === f.programId);
+        } else {
+            programs = state.allPrograms.filter(p => {
+                if (f.progRegSubmode === 'student_summary') {
+                    if (f.categoryId && p.categoryId !== f.categoryId && p.categoryId !== 'general_programs' && p.programType !== 'general') return false;
+                } else if (f.participationType === 'general') {
+                    if (p.categoryId !== 'general_programs' && p.programType !== 'general') return false;
+                } else {
+                    if (f.categoryId && p.categoryId !== f.categoryId) return false;
+                }
+                if (f.classId && p.classId && p.classId !== f.classId) return false;
+                if (f.gender && p.genderCategory && p.genderCategory !== f.gender && p.genderCategory !== 'General' && p.genderCategory !== 'Mixed') return false;
+                if (f.programLocation && (p.programLocation || p.location) !== f.programLocation) return false;
+                if (f.participationType) {
+                    if (f.participationType === 'general') {
+                        if (p.categoryId !== 'general_programs' && p.programType !== 'general') return false;
+                    } else if (f.participationType === 'group') {
+                        if (p.programType !== 'group') return false;
+                    } else if (f.participationType === 'individual') {
+                        if (p.programType !== 'individual') return false;
+                    }
+                }
+                return true;
+            });
+        }
+
+        if (programs.length === 0 && f.type !== 'Results') {
+            window.showToast("No programs match the selected filters.", "warning");
+            return;
+        }
+
+        // Phase 8 query scoping optimization: Only load results when explicitly requested
+        let resultsList = [];
+        let classAwards = [];
+        if (f.type === 'Results') {
+            if (f.resultSubOption === 'Class Wise Academic & Attendance') {
+                const awardsSnap = await getDocs(collection(db, "institutes", instId, "metadata"));
+                classAwards = awardsSnap.docs
+                    .filter(d => d.id.startsWith("class_award_"))
+                    .map(d => ({ id: d.id, ...d.data() }));
+            } else {
+                const resultsSnap = await getDocs(collection(db, "institutes", instId, "results"));
+                resultsList = resultsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            }
+        }
+
+        // Resolve students cache map dynamically to ensure chest numbers are up-to-date
+        let studentMap = {};
+        try {
+            const studentsSnap = await getDocs(collection(db, "institutes", instId, "students"));
+            studentsSnap.forEach(d => {
+                studentMap[d.id] = { id: d.id, ...d.data() };
+            });
+        } catch (err) {
+            console.error("Failed to load students collection:", err);
+        }
+
+        // Phase 7 Firestore Parallel Fetch Optimization using Promise.all
+        let participantsMap = {};
+        if (f.progRegSubmode !== 'list' && (f.type !== 'Results' || f.resultSubOption === 'Participants Without Major Prizes' || f.resultSubOption === 'Student Prize Distribution' || f.resultSubOption === 'Prize Distribution Register' || f.resultSubOption === 'Team Wise' || f.resultSubOption === 'Program Wise')) {
+            const participantPromises = programs.map(p => loadParticipants(p, f.teamId, studentMap));
+            const allParts = await Promise.all(participantPromises);
+            programs.forEach((p, idx) => {
+                participantsMap[p.id] = allParts[idx];
+            });
+        }
+
+        // 3. Compile and trigger
+        if (f.format === 'csv') {
+            compileCSV(exp, f, programs, resultsList, participantsMap, studentMap, classAwards);
+        } else {
+            compilePDF(exp, f, programs, resultsList, participantsMap, studentMap, isDownload, classAwards);
+        }
+
+    } catch (err) {
+        console.error("Compilation error:", err);
+        window.showToast(`Unable to download: ${err.message || err}`, "error");
+    }
+}
+

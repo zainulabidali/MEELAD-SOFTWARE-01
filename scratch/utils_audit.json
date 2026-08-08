@@ -1,0 +1,20 @@
+[
+  {
+    "name": "resizeImageIfNeeded",
+    "inputs": "file",
+    "reads_state": false,
+    "reads_dom": true,
+    "reads_firestore": false,
+    "pdf_print": false,
+    "body_snippet": "function resizeImageIfNeeded(file) {\n    return new Promise((resolve, reject) => {\n        const reader = new FileReader();\n        reader.onload = fu..."
+  },
+  {
+    "name": "formatLabel",
+    "inputs": "str",
+    "reads_state": false,
+    "reads_dom": false,
+    "reads_firestore": false,
+    "pdf_print": false,
+    "body_snippet": "function formatLabel(str) {\n    if (!str) return 'General';\n    return str\n        .replace(/[-_]/g, ' ')\n        .replace(/\\b\\w/g, c => c.toUpperCase..."
+  }
+]

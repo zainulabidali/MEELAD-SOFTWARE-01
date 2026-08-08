@@ -1,0 +1,1739 @@
+/* ═══════════════════════════════════════════
+   Redesigned Participants Workflow Stylesheet
+   Modern Premium SaaS Style (Stripe, Linear, Vercel)
+   ═══════════════════════════════════════════ */
+
+:root {
+    --pw-primary: #065F46;
+    --pw-primary-hover: #064E3B;
+    --pw-primary-light: #EEF2F6;
+    
+    --pw-success: #059669;
+    --pw-success-light: #ECFDF5;
+    
+    --pw-warning: #F59E0B;
+    --pw-warning-light: #FEFBEB;
+    
+    --pw-danger: #EF4444;
+    --pw-danger-light: #FEF2F2;
+    
+    --pw-slate-50: #FAFAFA;
+    --pw-slate-100: #F4F4F5;
+    --pw-slate-200: #E4E4E7;
+    --pw-slate-300: #D4D4D8;
+    --pw-slate-400: #A1A1AA;
+    --pw-slate-500: #71717A;
+    --pw-slate-700: #3F3F46;
+    --pw-slate-800: #27272A;
+    --pw-slate-900: #18181B;
+
+    --pw-border: #E4E4E7;
+    --pw-radius-sm: 6px;
+    --pw-radius-md: 10px;
+    --pw-radius-lg: 14px;
+    
+    --pw-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --pw-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    --pw-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+    
+    --pw-transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Page Frame Constraints (Prevent Main Screen Scrolling) */
+.pw-page {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: var(--pw-slate-50);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    color: var(--pw-slate-800);
+}
+
+/* Sticky Premium Header */
+.pw-sticky-header {
+    background: #ffffff;
+    border-bottom: 1px solid var(--pw-border);
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+    z-index: 20;
+}
+
+.pw-header-left {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.pw-breadcrumb {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--pw-slate-500);
+    font-weight: 700;
+}
+
+.pw-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.pw-title {
+    font-family: 'Outfit', sans-serif;
+    font-size: 1.4rem;
+    font-weight: 800;
+    margin: 0;
+    color: var(--pw-slate-900);
+    letter-spacing: -0.02em;
+}
+
+.pw-header-badges {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.pw-subtitle {
+    font-size: 0.8rem;
+    color: var(--pw-slate-500);
+}
+
+.pw-header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.pw-header-right .btn {
+    padding: 0.5rem 1rem;
+    border-radius: var(--pw-radius-sm);
+    font-weight: 600;
+    font-size: 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: var(--pw-transition);
+}
+
+/* Grid & Content Panel Structuring */
+.pw-content {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    background: #ffffff;
+}
+
+.pw-grid {
+    display: grid;
+    grid-template-columns: 380px 380px 1fr;
+    height: 100%;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+}
+
+.pw-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    background: #ffffff;
+    border-right: 1px solid var(--pw-border);
+}
+
+.pw-panel:last-child {
+    border-right: none;
+    background: var(--pw-slate-50);
+}
+
+.pw-panel-header {
+    padding: 1.25rem;
+    border-bottom: 1px solid var(--pw-border);
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.pw-panel-title {
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--pw-slate-900);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.pw-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.pw-panel-footer {
+    padding: 1rem 1.25rem;
+    border-top: 1px solid var(--pw-border);
+    background: #ffffff;
+    flex-shrink: 0;
+}
+
+/* Inputs & Form Controls */
+.pw-search-wrapper {
+    position: relative;
+}
+
+.pw-search-input {
+    width: 100%;
+    background: var(--pw-slate-100);
+    border: 1px solid transparent;
+    border-radius: var(--pw-radius-sm);
+    padding: 0.55rem 0.75rem 0.55rem 2rem;
+    font-size: 0.8rem;
+    color: var(--pw-slate-800);
+    transition: var(--pw-transition);
+}
+
+.pw-search-input:focus {
+    background: #ffffff;
+    border-color: var(--pw-primary);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+}
+
+.pw-search-icon {
+    position: absolute;
+    left: 0.65rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.8rem;
+    color: var(--pw-slate-400);
+    pointer-events: none;
+}
+
+.pw-select-compact {
+    background: var(--pw-slate-100);
+    border: 1px solid transparent;
+    border-radius: var(--pw-radius-sm);
+    padding: 0.5rem 2rem 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    color: var(--pw-slate-700);
+    cursor: pointer;
+    font-weight: 600;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2371717a' stroke-width='2.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19.5 8.25l-7.5 7.5-7.5-7.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.65rem center;
+    background-size: 0.8rem;
+    transition: var(--pw-transition);
+}
+
+.pw-select-compact:focus {
+    background: #ffffff;
+    border-color: var(--pw-primary);
+    outline: none;
+}
+
+/* Horizontal Filters Scrollbar */
+.pw-filter-scroll {
+    display: flex;
+    gap: 0.35rem;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+}
+
+.pw-filter-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+.pw-filter-pill {
+    background: var(--pw-slate-100);
+    color: var(--pw-slate-500);
+    border: none;
+    border-radius: 99px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: var(--pw-transition);
+}
+
+.pw-filter-pill:hover {
+    background: var(--pw-slate-200);
+    color: var(--pw-slate-800);
+}
+
+.pw-filter-pill.is-active {
+    background: var(--pw-primary);
+    color: #ffffff;
+}
+
+/* Segmented Control Buttons (Team Selector) */
+.pw-team-selector-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    position: relative;
+    width: 100%;
+    min-width: 0;
+}
+
+.pw-team-nav-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    background: #ffffff;
+    border: 1px solid var(--pw-border);
+    border-radius: var(--pw-radius-sm);
+    color: var(--pw-slate-600);
+    cursor: pointer;
+    transition: var(--pw-transition);
+    box-shadow: var(--pw-shadow-sm);
+    padding: 0;
+}
+
+.pw-team-nav-btn:hover:not(:disabled) {
+    background: var(--pw-slate-100);
+    color: var(--pw-primary);
+    border-color: var(--pw-slate-300);
+}
+
+.pw-team-nav-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    box-shadow: none;
+    background: var(--pw-slate-50);
+}
+
+.pw-segments {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    background: var(--pw-slate-100);
+    border-radius: var(--pw-radius-sm);
+    padding: 0.25rem;
+    gap: 0.35rem;
+    overflow-x: auto;
+    white-space: nowrap;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    cursor: grab;
+    
+    /* Sleek Desktop Scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: var(--pw-slate-300) transparent;
+}
+
+.pw-segments::-webkit-scrollbar {
+    height: 5px;
+    display: block;
+}
+
+.pw-segments::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.pw-segments::-webkit-scrollbar-thumb {
+    background: var(--pw-slate-300);
+    border-radius: 4px;
+}
+
+.pw-segments::-webkit-scrollbar-thumb:hover {
+    background: var(--pw-slate-400);
+}
+
+.pw-segment-btn {
+    flex: 0 0 auto;
+    text-align: center;
+    background: none;
+    border: none;
+    border-radius: calc(var(--pw-radius-sm) - 2px);
+    padding: 0.45rem 0.85rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--pw-slate-500);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: var(--pw-transition);
+    user-select: none;
+}
+
+.pw-segment-btn:hover {
+    color: var(--pw-slate-800);
+}
+
+.pw-segment-btn.is-active {
+    background: #ffffff;
+    color: var(--pw-primary);
+    box-shadow: var(--pw-shadow-sm);
+}
+
+@media (max-width: 640px) {
+    .pw-team-nav-btn {
+        display: none !important;
+    }
+    .pw-segments {
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
+    }
+    .pw-segments::-webkit-scrollbar {
+        display: none !important;
+    }
+}
+
+/* Bulk Actions Layout */
+.pw-bulk-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--pw-slate-50);
+    border: 1px solid var(--pw-border);
+    border-radius: var(--pw-radius-sm);
+    padding: 0.4rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.pw-bulk-btn {
+    background: none;
+    border: none;
+    color: var(--pw-slate-500);
+    cursor: pointer;
+    padding: 0.25rem 0.4rem;
+    font-weight: 700;
+    border-radius: 4px;
+    transition: var(--pw-transition);
+}
+
+.pw-bulk-btn:hover {
+    background: var(--pw-slate-200);
+    color: var(--pw-slate-900);
+}
+
+/* Student Cards List */
+.pw-student-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.stu-card {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.8rem;
+    border: 1px solid var(--pw-border);
+    border-radius: var(--pw-radius-md);
+    background: #ffffff;
+    cursor: pointer;
+    position: relative;
+    user-select: none;
+    transition: var(--pw-transition);
+}
+
+.stu-card:hover {
+    border-color: var(--pw-slate-400);
+    transform: translateY(-1px);
+    box-shadow: var(--pw-shadow-sm);
+}
+
+.stu-card.is-selected {
+    border-color: var(--pw-success);
+    background: var(--pw-success-light);
+}
+
+.stu-card.is-assigned {
+    border-color: var(--pw-primary);
+    background: var(--pw-primary-light);
+}
+
+.stu-card.is-keyboard-hover {
+    box-shadow: 0 0 0 2px var(--pw-primary);
+}
+
+/* Initials Avatar Circle */
+.stu-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.72rem;
+    color: #ffffff;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+.stu-card-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.stu-card-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--pw-slate-900);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.stu-card-subtitle {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.7rem;
+    color: var(--pw-slate-500);
+    flex-wrap: wrap;
+}
+
+.stu-card-subtitle span {
+    display: inline-flex;
+    align-items: center;
+}
+
+.stu-card-dot {
+    color: var(--pw-slate-300);
+    font-size: 0.5rem;
+}
+
+/* Badges System */
+.pw-badge-compact {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.pw-badge-eligible { background: #E6F4EA; color: #137333; }
+.pw-badge-elsewhere { background: #FEF3D6; color: #B06000; }
+.pw-badge-cannot { background: #FCE8E6; color: #C5221F; }
+
+.pw-badge-male { background: #E8F0FE; color: #1A73E8; }
+.pw-badge-female { background: #FCE4EC; color: #D81B60; }
+.pw-badge-registered { background: #E8F0FE; color: #1967D2; border: 1px solid #D2E3FC; }
+
+/* Student Card Sub-tags for active registrations */
+.stu-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+}
+
+.stu-tag {
+    font-size: 0.62rem;
+    font-weight: 600;
+    background: var(--pw-slate-100);
+    color: var(--pw-slate-700);
+    border: 1px solid var(--pw-border);
+    border-radius: 4px;
+    padding: 0.05rem 0.3rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+}
+
+.stu-tag-check {
+    color: var(--pw-success);
+    font-weight: 700;
+}
+
+/* Checkbox Animation & Structure */
+.stu-card-check {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.pw-checkbox {
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--pw-slate-300);
+    border-radius: 4px;
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--pw-transition);
+}
+
+.stu-card.is-selected .pw-checkbox {
+    background: var(--pw-success);
+    border-color: var(--pw-success);
+}
+
+.pw-checkbox::after {
+    content: '';
+    width: 4px;
+    height: 8px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) scale(0);
+    transition: var(--pw-transition);
+}
+
+.stu-card.is-selected .pw-checkbox::after {
+    transform: rotate(45deg) scale(1);
+}
+
+/* Center Panel Selection Buffer Layout */
+.pw-selected-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    max-height: 250px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.pw-selected-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--pw-slate-50);
+    border: 1px solid var(--pw-border);
+    border-radius: var(--pw-radius-sm);
+    padding: 0.4rem 0.6rem;
+    animation: pwChipScale 0.15s ease forwards;
+}
+
+@keyframes pwChipScale {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.pw-selected-item-avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--pw-primary);
+    color: #ffffff;
+    font-size: 0.62rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pw-selected-item-name {
+    flex: 1;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--pw-slate-800);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pw-selected-item-chest {
+    font-family: monospace;
+    font-size: 0.7rem;
+    color: var(--pw-slate-500);
+}
+
+.pw-selected-item-remove {
+    background: none;
+    border: none;
+    color: var(--pw-slate-400);
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0.1rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--pw-transition);
+}
+
+.pw-selected-item-remove:hover {
+    background: var(--pw-slate-200);
+    color: var(--pw-danger);
+}
+
+/* Registration Summary & Metrics Panel */
+.pw-summary-panel {
+    background: var(--pw-slate-50);
+    border: 1px solid var(--pw-border);
+    border-radius: var(--pw-radius-md);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.pw-summary-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+}
+
+.pw-metric-card {
+    background: #ffffff;
+    border: 1px solid var(--pw-border);
+    border-radius: var(--pw-radius-sm);
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.pw-metric-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--pw-slate-500);
+    text-transform: uppercase;
+}
+
+.pw-metric-value {
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--pw-slate-800);
+}
+
+/* Progress bar */
+.pw-progress-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.pw-progress-bar-bg {
+    height: 6px;
+    background: var(--pw-slate-200);
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.pw-progress-bar-fill {
+    height: 100%;
+    background: var(--pw-primary);
+    width: 0%;
+    border-radius: 99px;
+    transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pw-progress-bar-fill.is-limit {
+    background: var(--pw-danger);
+}
+
+.pw-progress-bar-fill.is-valid {
+    background: var(--pw-success);
+}
+
+/* Alert Messages inside Center Panel */
+.pw-alert-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.pw-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.6rem 0.8rem;
+    border-radius: var(--pw-radius-sm);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.pw-alert-warning {
+    background: var(--pw-warning-light);
+    color: #8A5B00;
+    border: 1px solid rgba(217, 119, 6, 0.2);
+}
+
+.pw-alert-danger {
+    background: var(--pw-danger-light);
+    color: #A61C1C;
+    border: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+.pw-alert-icon {
+    flex-shrink: 0;
+}
+
+/* Quick Group Reuse Panel */
+.pw-group-reuse {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border-top: 1px dashed var(--pw-border);
+    padding-top: 0.75rem;
+}
+
+.pw-group-reuse-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--pw-slate-500);
+    text-transform: uppercase;
+}
+
+.pw-reuse-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+}
+
+/* Right Panel: Group Cards & List */
+.pw-group-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+}
+
+.pw-group-card {
+    background: #ffffff;
+    border: 1px solid var(--pw-border);
+    border-radius: var(--pw-radius-md);
+    overflow: hidden;
+    transition: var(--pw-transition);
+}
+
+.pw-group-card:hover {
+    box-shadow: var(--pw-shadow-sm);
+    border-color: var(--pw-slate-300);
+}
+
+.pw-group-card-header {
+    padding: 0.8rem 1rem;
+    background: var(--pw-slate-50);
+    border-bottom: 1px solid var(--pw-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+}
+
+.pw-group-card-title {
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: var(--pw-slate-900);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.pw-group-card-badge {
+    background: var(--pw-slate-200);
+    color: var(--pw-slate-600);
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.15rem 0.45rem;
+    border-radius: 99px;
+}
+
+.pw-group-card-body {
+    padding: 0.8rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    border-bottom: 1px solid var(--pw-border);
+}
+
+.pw-group-members-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.pw-group-card-actions {
+    padding: 0.6rem 1rem;
+    background: var(--pw-slate-50);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.pw-group-card-btns-left,
+.pw-group-card-btns-right {
+    display: flex;
+    gap: 0.35rem;
+}
+
+.btn-group-action {
+    background: #ffffff;
+    border: 1px solid var(--pw-border);
+    border-radius: 4px;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--pw-slate-600);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    transition: var(--pw-transition);
+}
+
+.btn-group-action:hover:not(:disabled) {
+    background: var(--pw-slate-100);
+    color: var(--pw-slate-900);
+    border-color: var(--pw-slate-400);
+}
+
+.btn-group-action.btn-danger-action:hover:not(:disabled) {
+    background: var(--pw-danger-light);
+    color: var(--pw-danger);
+    border-color: var(--pw-danger);
+}
+
+.btn-group-action:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Assigned Table Layout (Linear / Stripe Style) */
+.pw-table-container {
+    background: #ffffff;
+    border: 1px solid var(--pw-border);
+    border-radius: var(--pw-radius-sm);
+    overflow: hidden;
+}
+
+.pw-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+    text-align: left;
+}
+
+.pw-table th {
+    background: var(--pw-slate-50);
+    border-bottom: 1px solid var(--pw-border);
+    padding: 0.65rem 0.85rem;
+    font-weight: 700;
+    color: var(--pw-slate-500);
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    letter-spacing: 0.05em;
+}
+
+.pw-table td {
+    padding: 0.65rem 0.85rem;
+    border-bottom: 1px solid var(--pw-border);
+    color: var(--pw-slate-800);
+    vertical-align: middle;
+}
+
+.pw-table tr:last-child td {
+    border-bottom: none;
+}
+
+.pw-table tr:hover {
+    background: var(--pw-slate-50);
+}
+
+/* Actions Dropdown Button in Assigned list */
+.btn-action-icon {
+    background: none;
+    border: none;
+    color: var(--pw-slate-400);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--pw-transition);
+}
+
+.btn-action-icon:hover {
+    background: var(--pw-slate-200);
+    color: var(--pw-slate-800);
+}
+
+/* Mobile persistent action drawers */
+.pw-mobile-action-bar {
+    display: none;
+}
+
+/* Global Toast and Overlay Fallbacks */
+.toast-container {
+    z-index: 1000000 !important;
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE SCALING / BREAKPOINTS
+   ═══════════════════════════════════════════ */
+
+@media (max-width: 1100px) {
+    .pw-grid {
+        grid-template-columns: 320px 320px 1fr;
+    }
+}
+
+@media (max-width: 900px) {
+    .pw-grid {
+        grid-template-columns: 1fr;
+        height: auto;
+        overflow-y: auto;
+    }
+    
+    .pw-page {
+        overflow-y: auto;
+    }
+    
+    .pw-panel {
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--pw-border);
+        overflow: visible;
+    }
+    
+    .pw-panel:last-child {
+        border-bottom: none;
+    }
+}
+
+/* Group Member Chip & Remove Button Styles */
+.pw-group-member-chip {
+    position: relative;
+    padding-right: 0.35rem;
+    transition: var(--pw-transition);
+}
+
+.pw-group-member-chip:hover {
+    border-color: var(--pw-slate-400);
+    background: var(--pw-slate-100) !important;
+}
+
+.pw-group-member-remove-btn {
+    background: transparent;
+    border: none;
+    color: var(--pw-slate-400);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.62rem;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-left: 0.15rem;
+    padding: 0;
+    line-height: 1;
+    transition: var(--pw-transition);
+}
+
+.pw-group-member-chip:hover .pw-group-member-remove-btn {
+    color: var(--pw-slate-600);
+}
+
+.pw-group-member-remove-btn:hover {
+    background: var(--pw-slate-200);
+    color: var(--pw-danger) !important;
+}
+
+/* Active Highlight States for Group Card & Member Chips Selection */
+.pw-group-card.is-selected {
+    border-color: var(--pw-primary) !important;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15), var(--pw-shadow-md) !important;
+}
+
+.pw-group-member-chip.is-selected {
+    background: var(--pw-primary-light) !important;
+    border-color: var(--pw-primary) !important;
+    color: var(--pw-primary) !important;
+    font-weight: 700;
+}
+
+/* Default Selection Buffer Card behavior for Desktop (acts as transparent wrapper) */
+.pw-selection-buffer-card {
+    display: contents;
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE DESIGN OVERRIDES (Mobile/Tablet)
+   ═══════════════════════════════════════════ */
+
+@media (max-width: 991px) {
+    /* Main Screen scroll and layout adjustments */
+    .pw-page {
+        position: relative !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        height: auto !important;
+        min-height: 100vh !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch !important;
+        background: var(--pw-slate-50) !important;
+        padding-bottom: 80px !important; /* Space for the sticky bottom bar */
+    }
+    
+    .pw-sticky-header {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 1000 !important;
+        box-shadow: var(--pw-shadow-sm) !important;
+        padding: 0.75rem 1rem !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 0.4rem !important;
+        background: #ffffff !important;
+        border-bottom: 1px solid var(--pw-border) !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+    }
+    
+    .pw-header-left {
+        gap: 0.35rem !important;
+    }
+    
+    .pw-breadcrumb {
+        display: none !important; /* Hide breadcrumbs on mobile */
+    }
+    
+    .pw-title {
+        font-size: 1.15rem !important;
+        font-weight: 800 !important;
+        margin: 0 !important;
+    }
+
+    .pw-header-meta-row {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        gap: 0.35rem !important;
+        font-size: 0.72rem !important;
+        color: var(--pw-slate-500) !important;
+    }
+
+    .pw-meta-item strong {
+        color: var(--pw-slate-800) !important;
+    }
+
+    #pwHeaderCategoryLabel {
+        color: var(--pw-primary) !important;
+    }
+
+    .pw-meta-divider {
+        color: var(--pw-slate-300) !important;
+    }
+
+    .pw-header-status-row {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        gap: 0.35rem !important;
+        margin-top: 0.1rem !important;
+    }
+    
+    .pw-badge-team,
+    .pw-badge-selected-count {
+        display: inline-flex !important;
+        background: var(--pw-primary-light) !important;
+        color: var(--pw-primary) !important;
+        border: 1px solid rgba(79, 70, 229, 0.15) !important;
+    }
+    
+    .pw-header-right {
+        width: 100% !important;
+        margin-top: 0.2rem !important;
+    }
+    
+    .pw-header-right .btn {
+        width: 100% !important;
+        justify-content: center !important;
+        min-height: 36px !important;
+        font-size: 0.75rem !important;
+        padding: 0.4rem !important;
+    }
+
+    .pw-content {
+        height: auto !important;
+        overflow: visible !important;
+        background: var(--pw-slate-50) !important;
+    }
+    
+    /* Stacked layout container */
+    .pw-grid {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        gap: 0.75rem !important;
+        padding: 0.75rem !important;
+        height: auto !important;
+        overflow: visible !important;
+        box-sizing: border-box !important;
+    }
+    
+    /* display: contents on panels to make children direct grid items */
+    .pw-panel:nth-child(2) {
+        display: contents !important;
+    }
+    .pw-panel:nth-child(2) > .pw-panel-body {
+        display: contents !important;
+    }
+    
+    /* 1. Choose Team Header Card */
+    .pw-panel:nth-child(2) > .pw-panel-header {
+        order: 1 !important;
+        background: #ffffff !important;
+        border: 1px solid var(--pw-border) !important;
+        border-radius: var(--pw-radius-md) !important;
+        padding: 0.85rem !important;
+        box-shadow: var(--pw-shadow-sm) !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+        min-width: 0 !important;
+    }
+
+    .pw-panel-title {
+        font-size: 0.85rem !important;
+    }
+    
+    .pw-segments {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        white-space: nowrap !important;
+        gap: 0.35rem !important;
+        background: var(--pw-slate-100) !important;
+        padding: 0.2rem !important;
+        border-radius: var(--pw-radius-sm) !important;
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
+        scroll-behavior: smooth !important;
+        -webkit-overflow-scrolling: touch !important;
+        touch-action: pan-x !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+    .pw-segments::-webkit-scrollbar {
+        display: none !important;
+    }
+    
+    .pw-segment-btn {
+        flex: 0 0 auto !important;
+        padding: 0.4rem 0.75rem !important;
+        font-size: 0.75rem !important;
+        white-space: nowrap !important;
+    }
+
+    /* 2. Registration Summary Metrics Card (Inline Strip Row) */
+    .pw-summary-panel {
+        order: 2 !important;
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        margin: 0 !important;
+        gap: 0 !important;
+    }
+
+    .pw-summary-panel > .pw-panel-title,
+    .pw-summary-panel > .pw-progress-wrapper {
+        display: none !important; /* Hide title & progress bar on mobile */
+    }
+
+    .pw-summary-metrics {
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 0.5rem !important;
+        width: 100% !important;
+    }
+
+    .pw-metric-card {
+        flex: 1 !important;
+        background: #ffffff !important;
+        border: 1px solid var(--pw-border) !important;
+        border-radius: var(--pw-radius-sm) !important;
+        padding: 0.45rem 0.6rem !important;
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 0.5rem !important;
+        box-shadow: var(--pw-shadow-sm) !important;
+    }
+
+    .pw-metric-label {
+        font-size: 0.65rem !important;
+        color: var(--pw-slate-500) !important;
+        font-weight: 700 !important;
+        margin: 0 !important;
+    }
+
+    .pw-metric-value {
+        font-size: 0.8rem !important;
+        font-weight: 800 !important;
+        color: var(--pw-slate-900) !important;
+        margin: 0 !important;
+    }
+
+    /* 3. Selected Students Buffer Card */
+    .pw-selection-buffer-card {
+        order: 3 !important;
+        background: #ffffff !important;
+        border: 1px solid var(--pw-border) !important;
+        border-radius: var(--pw-radius-md) !important;
+        padding: 0.75rem 0.85rem !important;
+        box-shadow: var(--pw-shadow-sm) !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 0.4rem !important;
+        min-width: 0 !important;
+    }
+
+    .pw-selection-buffer-card.is-empty {
+        display: none !important; /* Completely hide when empty on mobile */
+    }
+    
+    /* Horizontal Chips Scrolling in Selected Students */
+    .pw-selected-list {
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 0.4rem !important;
+        overflow-x: auto !important;
+        white-space: nowrap !important;
+        padding-bottom: 0.25rem !important;
+        max-height: none !important;
+        scrollbar-width: thin !important;
+        -webkit-overflow-scrolling: touch !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+    
+    .pw-selected-item {
+        flex: 0 0 auto !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 0.35rem !important;
+        padding: 0.25rem 0.5rem !important;
+        font-size: 0.7rem !important;
+        border-radius: var(--pw-radius-sm) !important;
+    }
+
+    #pwSelectedStudentsPreview > div:only-child {
+        display: none !important; /* Hide the "No students selected" placeholder */
+    }
+
+    /* 4. Student List Panel Card */
+    .pw-panel:nth-child(1) {
+        order: 4 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        height: 500px !important;
+        max-height: 75vh !important;
+        background: #ffffff !important;
+        border: 1px solid var(--pw-border) !important;
+        border-radius: var(--pw-radius-md) !important;
+        box-shadow: var(--pw-shadow-sm) !important;
+        overflow: hidden !important;
+        min-width: 0 !important;
+    }
+    
+    .pw-panel:nth-child(1) .pw-panel-header {
+        padding: 0.75rem 0.85rem !important;
+        border-bottom: 1px solid var(--pw-border) !important;
+        gap: 0.45rem !important;
+    }
+    
+    .pw-panel:nth-child(1) .pw-panel-body {
+        flex: 1 !important;
+        overflow-y: auto !important;
+        padding: 0.5rem 0.75rem !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    .pw-student-list {
+        gap: 0.4rem !important;
+    }
+    
+    /* 5. Registered Groups / Assigned Participants Card */
+    .pw-panel:nth-child(3) {
+        order: 5 !important;
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        height: auto !important;
+        overflow: visible !important;
+        min-width: 0 !important;
+    }
+    
+    .pw-panel:nth-child(3) .pw-panel-header {
+        background: #ffffff !important;
+        border: 1px solid var(--pw-border) !important;
+        border-radius: var(--pw-radius-md) !important;
+        padding: 0.85rem 1rem !important;
+        box-shadow: var(--pw-shadow-sm) !important;
+        margin-bottom: 0 !important;
+    }
+    
+    .pw-panel:nth-child(3) .pw-panel-body {
+        padding: 0.5rem 0.25rem 0 0.25rem !important;
+        overflow: visible !important;
+        display: none !important; /* Accordion behavior: collapsed by default */
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+    }
+
+    /* Expand accordion on mobile */
+    #pwRightPanel.is-expanded .pw-panel-body {
+        display: flex !important;
+    }
+
+    .pw-accordion-arrow {
+        display: inline-block !important;
+        font-size: 0.7rem !important;
+        color: var(--pw-slate-400) !important;
+        transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        margin-left: 0.5rem;
+    }
+
+    #pwRightPanel.is-expanded .pw-accordion-arrow {
+        transform: rotate(180deg) !important;
+    }
+    
+    /* 6. Sticky Bottom Action Footer Card */
+    .pw-panel:nth-child(2) > .pw-panel-footer {
+        order: 6 !important;
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        z-index: 2000 !important;
+        background: #ffffff !important;
+        border: none !important;
+        border-top: 1px solid var(--pw-border) !important;
+        border-radius: 0 !important;
+        padding: 0.65rem 1rem !important;
+        box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08) !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 0.3rem !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Save container on mobile */
+    .pw-save-container-mobile {
+        display: flex !important;
+        width: 100% !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 1rem !important;
+    }
+
+    .pw-mobile-save-info {
+        display: block !important;
+        font-size: 0.8rem !important;
+        font-weight: 700 !important;
+        color: var(--pw-slate-700) !important;
+    }
+
+    .pw-mobile-save-count {
+        font-size: 0.95rem !important;
+        color: var(--pw-primary) !important;
+        font-weight: 800 !important;
+    }
+
+    #pwSaveParticipantsBtn {
+        width: auto !important;
+        flex: 0 0 auto !important;
+        min-height: 40px !important;
+        padding: 0.5rem 1.25rem !important;
+        font-size: 0.8rem !important;
+    }
+
+    /* Group Create Container Sticky adjustments */
+    .pw-group-create-container {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 0.5rem !important;
+        width: 100% !important;
+    }
+
+    .pw-group-create-container .form-input {
+        flex: 1 !important;
+        min-height: 40px !important;
+        padding: 0.4rem 0.65rem !important;
+        font-size: 0.8rem !important;
+    }
+
+    #pwCreateGroupBtn {
+        width: auto !important;
+        flex: 0 0 auto !important;
+        min-height: 40px !important;
+        padding: 0.5rem 1rem !important;
+        font-size: 0.8rem !important;
+        margin: 0 !important;
+    }
+
+    .pw-save-status {
+        margin-top: 0.15rem !important;
+    }
+
+    /* 7. Quick Group Reuse Card */
+    .pw-group-reuse {
+        order: 7 !important;
+        background: #ffffff !important;
+        border: 1px solid var(--pw-border) !important;
+        border-radius: var(--pw-radius-md) !important;
+        padding: 0.85rem !important;
+        box-shadow: var(--pw-shadow-sm) !important;
+        border-top: 1px solid var(--pw-border) !important;
+        margin-top: 0 !important;
+    }
+}
+
+@media (max-width: 767px) {
+    /* Touch target adjustments and cleaner inputs on smaller phones */
+    .pw-search-input,
+    .pw-select-compact,
+    .form-input {
+        min-height: 38px !important;
+        font-size: 0.85rem !important;
+    }
+    
+    #pwBackBtn,
+    #pwCreateGroupBtn,
+    #pwSaveParticipantsBtn {
+        min-height: 38px !important;
+        font-size: 0.8rem !important;
+    }
+
+    /* Stacked registration warning alerts */
+    .pw-summary-metrics {
+        grid-template-columns: 1fr 1fr !important;
+        gap: 0.4rem !important;
+    }
+
+    /* Responsive Table to Cards layout for Assigned list inside Accordion */
+    .pw-table thead {
+        display: none !important;
+    }
+    
+    .pw-table, 
+    .pw-table tbody, 
+    .pw-table tr, 
+    .pw-table td {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+    
+    .pw-table tr {
+        background: #ffffff !important;
+        border: 1px solid var(--pw-border) !important;
+        border-radius: var(--pw-radius-sm) !important;
+        margin-bottom: 0.4rem !important;
+        padding: 0.6rem 0.75rem !important;
+        position: relative !important;
+        box-shadow: var(--pw-shadow-sm) !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 0.15rem !important;
+    }
+    
+    .pw-table tr:hover {
+        background: #ffffff !important;
+    }
+    
+    .pw-table td {
+        padding: 0 !important;
+        border: none !important;
+        color: var(--pw-slate-600) !important;
+    }
+    
+    /* Name */
+    .pw-table td:nth-child(2) {
+        font-size: 0.8rem !important;
+        font-weight: 700 !important;
+        color: var(--pw-slate-900) !important;
+        order: 1 !important;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding-right: 2rem !important;
+    }
+    
+    /* Chest No & Class */
+    .pw-table td:nth-child(1),
+    .pw-table td:nth-child(3) {
+        font-size: 0.68rem !important;
+        display: inline-flex !important;
+        align-items: center !important;
+    }
+    
+    /* Chest No */
+    .pw-table td:nth-child(1) {
+        order: 2 !important;
+    }
+    .pw-table td:nth-child(1)::before {
+        content: "Chest: " !important;
+        font-weight: 600 !important;
+        color: var(--pw-slate-400) !important;
+    }
+    
+    /* Class */
+    .pw-table td:nth-child(3) {
+        order: 3 !important;
+    }
+    .pw-table td:nth-child(3)::before {
+        content: " · Class: " !important;
+        font-weight: 600 !important;
+        color: var(--pw-slate-400) !important;
+    }
+    
+    /* Actions */
+    .pw-table td:nth-child(4) {
+        position: absolute !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        right: 0.5rem !important;
+        width: auto !important;
+        order: 4 !important;
+    }
+    
+    /* Student cards wrap and sizes */
+    .stu-card {
+        padding: 0.5rem 0.6rem !important;
+        gap: 0.5rem !important;
+        align-items: center !important;
+        border-radius: var(--pw-radius-sm) !important;
+    }
+    
+    .stu-avatar {
+        width: 28px !important;
+        height: 28px !important;
+        font-size: 0.65rem !important;
+    }
+    
+    .stu-card-body {
+        gap: 0.1rem !important;
+    }
+
+    .stu-card-title {
+        font-size: 0.8rem !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        line-height: 1.25 !important;
+    }
+    
+    .stu-card-subtitle {
+        font-size: 0.65rem !important;
+        gap: 0.2rem 0.35rem !important;
+    }
+
+    .pw-badge-compact {
+        padding: 0.05rem 0.25rem !important;
+        font-size: 0.58rem !important;
+    }
+    
+    .pw-checkbox {
+        width: 16px !important;
+        height: 16px !important;
+    }
+    
+    .pw-checkbox::after {
+        width: 4px !important;
+        height: 8px !important;
+    }
+    
+    /* Group cards button stack layouts */
+    .pw-group-card-actions {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 0.4rem !important;
+        padding: 0.6rem 0.75rem !important;
+    }
+    
+    .pw-group-card-btns-left,
+    .pw-group-card-btns-right {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 0.3rem !important;
+        width: 100% !important;
+    }
+    
+    .btn-group-action {
+        width: 100% !important;
+        justify-content: center !important;
+        min-height: 38px !important;
+        font-size: 0.8rem !important;
+    }
+    
+    /* Wrap long names inside member chips gracefully */
+    .pw-group-members-list {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 0.3rem !important;
+    }
+    
+    .pw-group-member-chip {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        font-size: 0.68rem !important;
+        padding: 0.2rem 0.45rem !important;
+    }
+    
+    .pw-group-member-chip span {
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        display: inline-block !important;
+        max-width: calc(100% - 12px) !important;
+    }
+    
+    /* Fix mobile responsive view for Assigned list Actions (Delete button) */
+    .pw-table td:nth-child(4),
+    .pw-table .pw-part-actions-cell {
+        position: static !important;
+        transform: none !important;
+        display: flex !important;
+        justify-content: flex-end !important;
+        width: 100% !important;
+        margin-top: 0.4rem !important;
+        border-top: 1px dashed var(--pw-border) !important;
+        padding-top: 0.4rem !important;
+        order: 4 !important;
+    }
+}
+
+

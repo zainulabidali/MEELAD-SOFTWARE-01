@@ -1,0 +1,2497 @@
+import { db, getCachedTeams, getCachedCategories, getCachedPrograms, updateDashboardMetadata, migrateParticipantCounts, classifyProgram, resolveEffectiveParticipationLimits, checkStudentParticipationEligibility, invalidateProgramOverviewCache } from './firebase.js';
+
+import {
+    collection,
+    getDocs,
+    query,
+    where,
+    doc,
+    getDoc,
+    setDoc,
+    deleteDoc,
+    writeBatch,
+    serverTimestamp,
+    increment,
+    collectionGroup
+} from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+
+function debounce(fn, ms) {
+    let t = null;
+    return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), ms);
+    };
+}
+
+function normalizeText(s) {
+    return (s || '').toString().trim().toLowerCase();
+}
+
+function uniqById(list) {
+    const m = new Map();
+    for (const x of list) m.set(x.id, x);
+    return [...m.values()];
+}
+
+function uid(prefix = 'id') {
+    return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+}
+
+function safeDocId(value) {
+    return (value || '').toString().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
+}
+
+export async function initParticipantsWorkflowView(container, topActions, { progId, progData }) {
+    // 1. Initial State Variables
+    const pType = (progData.programType || progData.type || 'individual').toLowerCase();
+    const isGroupEvent = pType === 'group' || (pType === 'general' && progData.registrationType === 'group');
+    const progNumberStr = progData.programNumber ? `[#${progData.programNumber}] ` : '';
+    const progName = progNumberStr + (progData.programName || 'Program');
+    const genderFilter = progData.genderCategory || 'Mixed';
+    let inheritedCategoryId = progData.categoryId || '';
+
+    // In-memory cache variables to optimize performance
+    const studentsByTeamCache = new Map();
+    const registrationsByTeamCache = new Map();
+    let programParticipantsCache = null;
+    let resultsStatusCache = null;
+
+    const teams = [];
+    const teamById = new Map();
+    const categoriesById = new Map();
+
+    let selectedTeamId = '';
+    let selectedCategoryId = '';
+    let selectedClassId = '';
+    let activeFilter = 'all'; // 'all' | 'eligible' | 'assigned' | 'unassigned' | 'selected'
+
+    let studentsAll = []; // Full list fetched from Firestore for selected Team + Category
+    let studentsFiltered = []; // Filtered list based on search/class/pill filters
+    let registrationsMap = new Map(); // studentId -> Set of registered program names
+    let registrationsProgramIdsMap = new Map(); // studentId -> Set of registered program IDs
+    let programsMap = new Map(); // programId -> program data object
+    let studentGroupsMap = new Map(); // studentId -> { groupName, teamName, memberCount, members }
+    let allEventGroups = []; // Array of groups from all teams in this program
+    let savedIndividualStudentIds = new Set();
+    let assignedParticipantsAll = []; // Stores detailed objects of assigned participants for current team
+    let editingParticipantId = null; // Scoped variable for inline editing
+    const selectedStudentIds = new Set(); // Holds selected checkbox buffer student IDs
+    let groups = []; // For group event: list of created groups in the current team
+    let selectedGroupId = '';
+    const selectedGroupMemberIds = new Set();
+    let groupContainerRef = null; // Reference to the program group container doc
+    const participantDocIds = new Map(); // studentId -> firestoreDocId
+
+    // Keyboard Navigation Highlight State
+    let activeStudentIndex = -1;
+    let renderLimit = 80;
+
+    // Real-time calculated status variables
+    let resultSubmitted = false;
+    let resultPublished = false;
+
+    // 2. Set Up Main Page UI Structure (Three-Panel Layout)
+    container.innerHTML = `
+    <div class="pw-page" data-pw-root>
+      <!-- Header -->
+      <div class="pw-sticky-header">
+        <div class="pw-header-left">
+          <div class="pw-breadcrumb">Admin Panel · Programs · Add Students</div>
+          <div class="pw-header-title-row">
+            <h2 class="pw-title">👥 ${window.escapeHTML(progName)}</h2>
+          </div>
+          <div class="pw-header-meta-row">
+            <span class="pw-meta-item">Category: <strong id="pwHeaderCategoryLabel">Loading...</strong></span>
+            <span class="pw-meta-divider">•</span>
+            <span class="pw-meta-item">Gender: <strong>${window.escapeHTML(genderFilter)}</strong></span>
+            <span class="pw-meta-divider">•</span>
+            <span class="pw-meta-item">Location: <strong>${window.escapeHTML(progData.programLocation || '—')}</strong></span>
+            <span class="pw-meta-divider">•</span>
+            <span class="pw-badge-compact ${isGroupEvent ? 'pw-badge-registered' : 'pw-badge-male'}">
+              ${isGroupEvent ? 'Group' : 'Individual'}
+            </span>
+            <span class="pw-badge-compact pw-badge-cannot" id="pwHeaderStatusBadge">Pending</span>
+          </div>
+          <div class="pw-header-status-row">
+            <span class="pw-badge-compact pw-badge-team" id="pwHeaderTeamBadge" style="display: none;">Team: —</span>
+            <span class="pw-badge-compact pw-badge-selected-count" id="pwHeaderSelectedCountBadge" style="display: none;">Selected: 0</span>
+            <span class="pw-badge-compact pw-badge-registered" id="pwHeaderParticipantCount">👥 0 Participants</span>
+          </div>
+        </div>
+        <div class="pw-header-right">
+          <button class="btn btn-secondary" id="pwBackBtn">← Back to Programs</button>
+        </div>
+      </div>
+
+      <!-- Main Layout Panels wrapper -->
+      <div class="pw-content">
+        <div class="pw-grid">
+          
+          <!-- 1. LEFT PANEL: Student Directory -->
+          <aside class="pw-panel">
+            <div class="pw-panel-header">
+              <div class="pw-panel-title">
+                <span>🎓 Student List</span>
+                <span id="pwStudentsCountLabel" style="font-size: 0.72rem; color: var(--pw-slate-500); font-weight: 600;">Total: 0</span>
+              </div>
+              <div class="pw-search-wrapper">
+                <span class="pw-search-icon">🔍</span>
+                <input type="text" id="pwStudentSearch" class="pw-search-input" placeholder="Search by name, chest #... (Ctrl+F)" disabled />
+              </div>
+              <div style="display:flex; gap:0.5rem;">
+                <select id="pwClassFilter" class="pw-select-compact" disabled style="flex:1;">
+                  <option value="">All Classes</option>
+                </select>
+              </div>
+              <div class="pw-filter-scroll" id="pwFilterPills">
+                <button class="pw-filter-pill is-active" data-filter="all">All</button>
+                <button class="pw-filter-pill" data-filter="eligible">Available</button>
+                <button class="pw-filter-pill" data-filter="selected">Selected</button>
+              </div>
+            </div>
+            
+            <div class="pw-panel-body" id="pwStudentListScroll" style="padding-top: 0.5rem;">
+              <div id="pwStudentList" class="pw-student-list"></div>
+              <div id="pwStudentsSkeleton" class="pw-skeleton" style="display:none; height:180px; margin-top:1rem;"></div>
+            </div>
+          </aside>
+
+          <!-- 2. CENTER PANEL: Selected & Selection Summary -->
+          <aside class="pw-panel">
+            <div class="pw-panel-header" style="gap: 0.5rem;">
+              <div class="pw-panel-title">🏢 Choose Team</div>
+              <!-- Compact segmented button group with nav arrows -->
+              <div class="pw-team-selector-wrapper">
+                <button type="button" class="pw-team-nav-btn prev" id="pwTeamNavPrev" aria-label="Scroll left" disabled title="Scroll left">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <div class="pw-segments" id="pwTeamList"></div>
+                <button type="button" class="pw-team-nav-btn next" id="pwTeamNavNext" aria-label="Scroll right" title="Scroll right">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+            
+            <div class="pw-panel-body">
+              <div class="pw-selection-buffer-card is-empty">
+                <div class="pw-panel-title">
+                  <span>👥 Selected Students</span>
+                  <span class="pw-badge-compact pw-badge-registered" id="pwSelectedCountBadge">0</span>
+                </div>
+                
+                <!-- Selected chips preview list -->
+                <div id="pwSelectedStudentsPreview" class="pw-selected-list"></div>
+              </div>
+              
+              <!-- Registration Constraints Summary -->
+              <div class="pw-summary-panel">
+                <div class="pw-panel-title" style="font-size: 0.78rem; text-transform: uppercase;">📋 Registration Summary</div>
+                <div class="pw-summary-metrics">
+                  <div class="pw-metric-card">
+                    <span class="pw-metric-label">Selected Count</span>
+                    <span class="pw-metric-value" id="pwMetricSelected">0 / —</span>
+                  </div>
+                  <div class="pw-metric-card">
+                    <span class="pw-metric-label">Remaining Slots</span>
+                    <span class="pw-metric-value" id="pwMetricSlots">—</span>
+                  </div>
+                </div>
+                
+                <div class="pw-progress-wrapper">
+                  <div class="pw-progress-bar-bg">
+                    <div class="pw-progress-bar-fill" id="pwProgressBarFill"></div>
+                  </div>
+                </div>
+                
+                <!-- Conflicting warnings alert container -->
+                <div class="pw-alert-container" id="pwAlertContainer"></div>
+              </div>
+            </div>
+            
+            <div class="pw-panel-footer">
+              ${isGroupEvent ? `
+                <div class="pw-group-create-container">
+                  <input id="pwNewGroupName" class="form-input" placeholder="New Group Name (e.g. Group A)" style="font-size: 0.8rem; padding: 0.55rem 0.75rem;" />
+                  <button class="btn btn-primary" id="pwCreateGroupBtn" disabled style="width:100%; font-weight:700; min-height:38px;">+ Create Group</button>
+                </div>
+              ` : `
+                <div class="pw-save-container-mobile">
+                  <div class="pw-mobile-save-info" style="display: none;">
+                    <span class="pw-mobile-save-count" id="pwFooterSelectedCount">0</span> selected
+                  </div>
+                  <button class="btn btn-primary" id="pwSaveParticipantsBtn" disabled style="width:100%; font-weight:700; min-height:38px;">💾 Save Participants</button>
+                </div>
+                <div class="pw-save-status" id="pwSaveStatus" aria-live="polite" style="margin-top: 0.5rem; font-size:0.72rem; color:var(--pw-slate-500); text-align:center;"></div>
+              `}
+            </div>
+          </aside>
+
+          <!-- 3. RIGHT PANEL: Existing Groups / Active Registrations -->
+          <main class="pw-panel" id="pwRightPanel">
+            <div class="pw-panel-header" id="pwRightPanelHeader" style="cursor: pointer;">
+              <div class="pw-panel-title">
+                <span id="pwRightPanelTitleText">${isGroupEvent ? '📂 Registered Groups' : '📋 Assigned Participants'}</span>
+                <span id="pwRightPanelHeaderArrow" class="pw-accordion-arrow" style="display: none;">▼</span>
+              </div>
+              <p class="pw-subtitle" style="margin:0;">
+                ${isGroupEvent ? 'Manage created groups and member registers.' : 'List of saved individual registrations for this team.'}
+              </p>
+            </div>
+            
+            <div class="pw-panel-body" id="pwRightPanelBody">
+              ${isGroupEvent ? `
+                <div id="pwGroupsList" class="pw-group-list"></div>
+              ` : `
+                <div id="pwAssignedManagementPanel"></div>
+              `}
+            </div>
+          </main>
+          
+        </div>
+      </div>
+      
+    </div>
+    `;
+
+    // 3. UI Helpers
+    function setPill(which, val) {
+        // Obsolete or fallback pill updates
+        const el = document.getElementById(`pw${which}Pill`);
+        if (el) el.textContent = val || '—';
+    }
+
+    // Dynamic Program Status Calculation (Real-Time Badge Engine)
+    function updateProgramHeaderBadges() {
+        const pCountBadge = document.getElementById('pwHeaderParticipantCount');
+        const statusBadge = document.getElementById('pwHeaderStatusBadge');
+
+        let pCount = 0;
+        let pText = '0 Participants';
+
+        if (isGroupEvent) {
+            pCount = groups.length;
+            pText = `${pCount} ${pCount === 1 ? 'Team' : 'Teams'}`;
+        } else {
+            pCount = assignedParticipantsAll.length;
+            pText = `${pCount} ${pCount === 1 ? 'Participant' : 'Participants'}`;
+        }
+
+        if (pCountBadge) pCountBadge.innerHTML = `👥 ${pText}`;
+
+        const rightPanelTitleText = document.getElementById('pwRightPanelTitleText');
+        if (rightPanelTitleText) {
+            rightPanelTitleText.textContent = isGroupEvent
+                ? `📂 Registered Groups (${groups.length})`
+                : `📋 Assigned Participants (${assignedParticipantsAll.length})`;
+        }
+
+        let status = 'Pending';
+        let badgeClass = 'pw-badge-pending';
+
+        if (pCount > 0) {
+            status = 'Active';
+            badgeClass = 'pw-badge-active';
+        }
+        if (resultSubmitted) {
+            status = 'Submitted';
+            badgeClass = 'pw-badge-submitted';
+        }
+        if (resultPublished) {
+            status = 'Published';
+            badgeClass = 'pw-badge-published';
+        }
+
+        if (statusBadge) {
+            statusBadge.className = `pw-badge-compact ${badgeClass}`;
+            statusBadge.textContent = status;
+        }
+    }
+
+    function updateActionButtonsState() {
+        document.querySelectorAll('.pw-group-card').forEach(card => {
+            const groupId = card.getAttribute('data-group-id');
+            const addBtn = card.querySelector('[data-add-group-id]');
+            const removeBtn = card.querySelector('[data-remove-group-id]');
+
+            if (groupId === selectedGroupId) {
+                card.classList.add('is-selected');
+            } else {
+                card.classList.remove('is-selected');
+            }
+
+            if (addBtn) {
+                const shouldEnableAdd = (selectedGroupId === groupId) && (selectedStudentIds.size > 0);
+                addBtn.disabled = !shouldEnableAdd;
+            }
+
+            if (removeBtn) {
+                const shouldEnableRemove = (selectedGroupId === groupId) && (selectedGroupMemberIds.size > 0);
+                removeBtn.disabled = !shouldEnableRemove;
+            }
+        });
+    }
+
+    function toggleStudentSelection(student) {
+        const id = student.id;
+        const assignedGroupStudentIds = new Set();
+        if (isGroupEvent) {
+            for (const g of groups) {
+                if (g.members) {
+                    for (const m of g.members) {
+                        if (m.studentId) assignedGroupStudentIds.add(m.studentId);
+                    }
+                }
+            }
+        }
+        const isAssigned = savedIndividualStudentIds.has(id) || (isGroupEvent && assignedGroupStudentIds.has(id));
+        if (isAssigned) return;
+
+        const limitEligibility = checkStudentParticipationEligibility(
+            student,
+            progData,
+            window.currentEventDetails?.participationLimits,
+            registrationsProgramIdsMap,
+            programsMap
+        );
+        if (!limitEligibility.eligible) {
+            window.showToast(`Cannot select ${student.name}. Limit reached for ${limitEligibility.label} (${limitEligibility.count}/${limitEligibility.limit}).`, "error");
+            return;
+        }
+
+        const isSelectedNow = selectedStudentIds.has(id);
+        if (isSelectedNow) {
+            selectedStudentIds.delete(id);
+        } else {
+            selectedStudentIds.add(id);
+        }
+        refreshSelectedPreviews();
+
+        const card = document.querySelector(`#pwStudentList [data-stu-id="${id}"]`);
+        if (card) {
+            card.classList.toggle('is-selected', !isSelectedNow);
+        }
+    }
+
+    function refreshSelectedPreviews() {
+        const badgeEl = document.getElementById('pwSelectedCountBadge');
+        if (badgeEl) badgeEl.textContent = selectedStudentIds.size;
+
+        const footerCountEl = document.getElementById('pwFooterSelectedCount');
+        if (footerCountEl) footerCountEl.textContent = selectedStudentIds.size;
+
+        const bufferCard = document.querySelector('.pw-selection-buffer-card');
+        if (bufferCard) {
+            if (selectedStudentIds.size === 0) {
+                bufferCard.classList.add('is-empty');
+            } else {
+                bufferCard.classList.remove('is-empty');
+            }
+        }
+
+        const previewEl = document.getElementById('pwSelectedStudentsPreview');
+        if (previewEl) {
+            const selected = studentsAll.filter(s => selectedStudentIds.has(s.id));
+            previewEl.innerHTML = selected.map(s => {
+                const initials = s.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+                return `
+                    <div class="pw-selected-item">
+                        <div class="pw-selected-item-avatar">${window.escapeHTML(initials)}</div>
+                        <div class="pw-selected-item-name">${window.escapeHTML(s.name)}</div>
+                        <div class="pw-selected-item-chest">#${window.escapeHTML(s.chestNumber || '—')}</div>
+                        <button class="pw-selected-item-remove" data-id="${s.id}" title="Remove student">✕</button>
+                    </div>
+                `;
+            }).join('') || `
+                <div style="text-align:center; padding:1.5rem; color:var(--pw-slate-500); border: 1.5px dashed var(--pw-border); border-radius:var(--pw-radius-md); font-size:0.75rem;">
+                    No students selected. Check cards on the left panel.
+                </div>
+            `;
+
+            previewEl.querySelectorAll('.pw-selected-item-remove').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    const id = btn.getAttribute('data-id');
+                    selectedStudentIds.delete(id);
+                    refreshSelectedPreviews();
+                    renderStudentList();
+                };
+            });
+        }
+
+        // Metrics & Progress bar updates
+        const maxVal = progData.maxParticipants || 0;
+        const minVal = isGroupEvent ? 2 : 1;
+        const selectedCount = selectedStudentIds.size;
+
+        const metricSelected = document.getElementById('pwMetricSelected');
+        const metricSlots = document.getElementById('pwMetricSlots');
+        const progressFill = document.getElementById('pwProgressBarFill');
+        const alertContainer = document.getElementById('pwAlertContainer');
+
+        if (metricSelected) {
+            metricSelected.textContent = `${selectedCount} / ${maxVal || '∞'}`;
+        }
+
+        if (metricSlots) {
+            if (maxVal) {
+                metricSlots.textContent = Math.max(0, maxVal - selectedCount);
+            } else {
+                metricSlots.textContent = '∞';
+            }
+        }
+
+        if (progressFill) {
+            if (maxVal) {
+                const pct = Math.min(100, (selectedCount / maxVal) * 100);
+                progressFill.style.width = `${pct}%`;
+                progressFill.className = 'pw-progress-bar-fill';
+                if (selectedCount > maxVal) {
+                    progressFill.classList.add('is-limit');
+                } else if (selectedCount >= minVal) {
+                    progressFill.classList.add('is-valid');
+                }
+            } else {
+                progressFill.style.width = selectedCount > 0 ? '100%' : '0%';
+                progressFill.className = 'pw-progress-bar-fill is-valid';
+            }
+        }
+
+        // Alerts & Warning validations
+        let alertsHTML = '';
+        if (maxVal && selectedCount > maxVal) {
+            alertsHTML += `
+                <div class="pw-alert pw-alert-danger">
+                    <span class="pw-alert-icon">⚠️</span>
+                    <span>Limit exceeded! Maximum allowed is ${maxVal} members.</span>
+                </div>
+            `;
+        }
+        if (selectedCount < minVal && selectedCount > 0) {
+            alertsHTML += `
+                <div class="pw-alert pw-alert-warning">
+                    <span class="pw-alert-icon">⚠️</span>
+                    <span>Need ${minVal - selectedCount} more member${minVal - selectedCount === 1 ? '' : 's'} to meet requirements.</span>
+                </div>
+            `;
+        }
+
+        // Duplicate warnings
+        const selectedList = studentsAll.filter(s => selectedStudentIds.has(s.id));
+        const elsewhereList = selectedList.filter(s => registrationsMap.has(s.id) && registrationsMap.get(s.id).size > 0);
+        if (elsewhereList.length > 0) {
+            const names = elsewhereList.map(s => s.name).slice(0, 2).join(', ') + (elsewhereList.length > 2 ? ` and ${elsewhereList.length - 2} others` : '');
+            alertsHTML += `
+                <div class="pw-alert pw-alert-warning">
+                    <span class="pw-alert-icon">⚠️</span>
+                    <span>Duplicate Found: ${window.escapeHTML(names)} already registered in other events.</span>
+                </div>
+            `;
+        }
+
+        if (alertContainer) {
+            alertContainer.innerHTML = alertsHTML;
+        }
+
+        // Save & Create group locks
+        if (isGroupEvent) {
+            const createBtn = document.getElementById('pwCreateGroupBtn');
+            if (createBtn) {
+                createBtn.disabled = selectedCount === 0 || (maxVal && selectedCount > maxVal);
+            }
+        } else {
+            const saveBtn = document.getElementById('pwSaveParticipantsBtn');
+            if (saveBtn) {
+                saveBtn.disabled = selectedCount === 0 || (maxVal && selectedCount > maxVal);
+            }
+        }
+
+        updateProgramHeaderBadges();
+        const selectedBadge = document.getElementById('pwHeaderSelectedCountBadge');
+        if (selectedBadge) {
+            selectedBadge.textContent = `Selected: ${selectedStudentIds.size}`;
+        }
+        if (isGroupEvent) {
+            updateActionButtonsState();
+        }
+    }
+
+    function renderStudentList() {
+        const el = document.getElementById('pwStudentList');
+        if (!el) return;
+
+        if (!studentsFiltered || studentsFiltered.length === 0) {
+            el.innerHTML = `<div class="pw-empty" style="text-align:center; padding:2rem; color:var(--pw-slate-500); font-weight:600;">No students match the current filters.</div>`;
+            return;
+        }
+
+        const assignedGroupStudentIds = new Set();
+        if (isGroupEvent) {
+            for (const g of groups) {
+                if (g.members) {
+                    for (const m of g.members) {
+                        if (m.studentId) assignedGroupStudentIds.add(m.studentId);
+                    }
+                }
+            }
+        }
+
+        const visibleStudents = studentsFiltered.slice(0, renderLimit);
+        const frag = visibleStudents.map((s, idx) => {
+            const isSelected = selectedStudentIds.has(s.id);
+            const isAssigned = savedIndividualStudentIds.has(s.id) || (isGroupEvent && assignedGroupStudentIds.has(s.id));
+
+            // Determine duplicate status
+            let statusText = 'Eligible';
+            let statusClass = 'pw-badge-eligible';
+            let statusDot = '🟢';
+
+            const limitEligibility = checkStudentParticipationEligibility(
+                s,
+                progData,
+                window.currentEventDetails?.participationLimits,
+                registrationsProgramIdsMap,
+                programsMap
+            );
+
+            const isLimitReached = !isAssigned && !limitEligibility.eligible;
+
+            if (isAssigned) {
+                statusText = isGroupEvent ? 'Already in this Group' : 'Registered Here';
+                statusClass = 'pw-badge-registered';
+                statusDot = '🔵';
+            } else if (isLimitReached) {
+                statusText = `${limitEligibility.label.toUpperCase()} LIMIT REACHED · ${limitEligibility.count}/${limitEligibility.limit}`;
+                statusClass = 'pw-badge-cannot';
+                statusDot = '🔴';
+            } else {
+                const hasOtherRegs = registrationsMap.has(s.id) && registrationsMap.get(s.id).size > 0;
+                if (hasOtherRegs) {
+                    statusText = 'Registered Elsewhere';
+                    statusClass = 'pw-badge-elsewhere';
+                    statusDot = '🟡';
+                } else {
+                    statusText = 'Eligible';
+                    statusClass = 'pw-badge-eligible';
+                    statusDot = '🟢';
+                }
+            }
+
+            // Group membership check (Requirement 12)
+            const groupInfo = studentGroupsMap.get(s.id);
+            let groupInfoHTML = '';
+            if (groupInfo && isGroupEvent) {
+                const memberNames = (groupInfo.members || []).map(m => m.studentName).join(', ');
+                groupInfoHTML = `
+                    <span class="pw-badge-compact pw-badge-elsewhere" title="Members: ${window.escapeHTML(memberNames)}">
+                        👥 ${window.escapeHTML(groupInfo.groupName)} (${groupInfo.memberCount} Members)
+                    </span>
+                `;
+            }
+
+            const registeredProgs = Array.from(registrationsMap.get(s.id) || []);
+            const tagsHTML = registeredProgs.map(name => `
+                <span class="stu-tag" title="${window.escapeHTML(name)}">
+                    <span class="stu-tag-check">✔</span> ${window.escapeHTML(name.length > 15 ? name.slice(0, 15) + '...' : name)}
+                </span>
+            `).join('');
+
+            // Initials avatar
+            const nameHash = s.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+            const avatarHue = nameHash % 360;
+            const avatarStyle = `background: hsl(${avatarHue}, 60%, 45%);`;
+            const initials = s.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+
+            const isKeyboardHover = idx === activeStudentIndex ? 'is-keyboard-hover' : '';
+            const cardClass = `stu-card ${isSelected ? 'is-selected' : ''} ${isAssigned ? 'is-assigned' : ''} ${isKeyboardHover}`;
+
+            return `
+                <div class="${cardClass}" data-stu-id="${s.id}" style="${isLimitReached ? 'opacity: 0.7; cursor: not-allowed;' : ''}">
+                    <div class="stu-card-check">
+                        <span class="pw-checkbox"></span>
+                    </div>
+                    <div class="stu-avatar" style="${avatarStyle}">${window.escapeHTML(initials)}</div>
+                    <div class="stu-card-body">
+                        <div class="stu-card-title">${window.escapeHTML(s.name)}</div>
+                        <div class="stu-card-subtitle">
+                            <span>#${window.escapeHTML(s.chestNumber || '—')}</span>
+                            <span class="stu-card-dot">•</span>
+                            <span>Class: ${window.escapeHTML(s.className || s.classId || '—')}</span>
+                            <span class="stu-card-dot">•</span>
+                            <span class="pw-badge-compact ${s.gender === 'Female' ? 'pw-badge-female' : 'pw-badge-male'}">${window.escapeHTML(s.gender || '—')}</span>
+                            <span class="stu-card-dot">•</span>
+                            <span class="pw-badge-compact ${statusClass}">${statusDot} ${statusText}</span>
+                            ${groupInfoHTML}
+                        </div>
+                        ${tagsHTML ? `<div class="stu-tags">${tagsHTML}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        el.innerHTML = frag;
+
+        // Auto scrolling for keyboard list highlights
+        const scrollContainer = document.getElementById('pwStudentListScroll');
+        if (activeStudentIndex !== -1 && scrollContainer) {
+            const activeCard = el.querySelector('.is-keyboard-hover');
+            if (activeCard) {
+                const containerTop = scrollContainer.scrollTop;
+                const containerBottom = containerTop + scrollContainer.clientHeight;
+                const elemTop = activeCard.offsetTop;
+                const elemBottom = elemTop + activeCard.clientHeight;
+
+                if (elemTop < containerTop) {
+                    scrollContainer.scrollTop = elemTop;
+                } else if (elemBottom > containerBottom) {
+                    scrollContainer.scrollTop = elemBottom - scrollContainer.clientHeight;
+                }
+            }
+        }
+    }
+
+    function autoScrollSelectedTeamIntoView() {
+        const el = document.getElementById('pwTeamList');
+        if (!el) return;
+        const activeBtn = el.querySelector('.pw-segment-btn.is-active');
+        if (!activeBtn) return;
+
+        const containerLeft = el.scrollLeft;
+        const containerRight = containerLeft + el.clientWidth;
+        const btnLeft = activeBtn.offsetLeft;
+        const btnRight = btnLeft + activeBtn.offsetWidth;
+
+        if (btnLeft < containerLeft) {
+            el.scrollTo({ left: Math.max(0, btnLeft - 16), behavior: 'smooth' });
+        } else if (btnRight > containerRight) {
+            el.scrollTo({ left: btnRight - el.clientWidth + 16, behavior: 'smooth' });
+        }
+    }
+
+    function updateTeamNavButtons() {
+        const el = document.getElementById('pwTeamList');
+        const prevBtn = document.getElementById('pwTeamNavPrev');
+        const nextBtn = document.getElementById('pwTeamNavNext');
+        if (!el || !prevBtn || !nextBtn) return;
+
+        const maxScroll = el.scrollWidth - el.clientWidth;
+        if (maxScroll <= 2) {
+            prevBtn.disabled = true;
+            nextBtn.disabled = true;
+        } else {
+            prevBtn.disabled = el.scrollLeft <= 2;
+            nextBtn.disabled = el.scrollLeft >= maxScroll - 2;
+        }
+    }
+
+    function renderTeamSegments() {
+        const el = document.getElementById('pwTeamList');
+        if (!el) return;
+        let html = teams.map(t => {
+            const active = t.id === selectedTeamId ? 'is-active' : '';
+            return `
+                <button type="button" class="pw-segment-btn ${active}" data-team-segment="${t.id}">
+                    ${window.escapeHTML(t.name)}
+                </button>
+            `;
+        }).join('');
+
+        const teamlessActive = selectedTeamId === 'teamless' ? 'is-active' : '';
+        html += `
+            <button type="button" class="pw-segment-btn ${teamlessActive}" data-team-segment="teamless">
+                No Team
+            </button>
+        `;
+        el.innerHTML = html;
+
+        setTimeout(() => {
+            autoScrollSelectedTeamIntoView();
+            updateTeamNavButtons();
+        }, 50);
+    }
+
+    // 4. Data Loading Methods
+    async function loadTeams() {
+        const teamsData = await getCachedTeams(window.currentInstituteId);
+        teams.length = 0;
+        teamById.clear();
+        teamsData.forEach(t => {
+            const item = { id: t.id, name: t.name || t.id };
+            teams.push(item);
+            teamById.set(item.id, item);
+        });
+    }
+
+    async function loadCategories() {
+        const categoriesData = await getCachedCategories(window.currentInstituteId);
+        const out = [];
+        categoriesById.clear();
+        categoriesData.forEach(cat => {
+            out.push({ id: cat.id, name: cat.name || cat.id, classes: cat.classes || [] });
+            categoriesById.set(cat.id, cat);
+        });
+        return out;
+    }
+
+    function getClassesForCategory(catId) {
+        const catData = categoriesById.get(catId);
+        const classes = catData?.classes || [];
+        return classes.map(c => {
+            if (typeof c === 'string') {
+                return { id: c.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: c.trim() };
+            }
+            return { id: c.id, name: c.name || c.id };
+        });
+    }
+
+    function getAllClasses() {
+        const all = [];
+        const seen = new Set();
+        for (const catData of categoriesById.values()) {
+            const classes = catData?.classes || [];
+            classes.forEach(c => {
+                let resolved;
+                if (typeof c === 'string') {
+                    resolved = { id: c.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: c.trim() };
+                } else {
+                    resolved = { id: c.id, name: c.name || c.id };
+                }
+                if (resolved.id && !seen.has(resolved.id)) {
+                    seen.add(resolved.id);
+                    all.push(resolved);
+                }
+            });
+        }
+        return all.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    }
+
+    async function getProgramParticipantsDocs() {
+        if (programParticipantsCache !== null) {
+            return programParticipantsCache;
+        }
+        const partRef = collection(db, "institutes", window.currentInstituteId, "programs", progId, "participants");
+        const programSnap = await getDocs(partRef);
+        if (programSnap.metadata && programSnap.metadata.fromCache) {
+            console.warn(`[FIRESTORE CACHE NOTICE] Snapshot read from local IndexedDB cache (Offline Mode / Cached Snapshot). fromCache: true, hasPendingWrites: ${programSnap.metadata.hasPendingWrites}`);
+        } else if (programSnap.metadata) {
+            console.log(`[FIRESTORE SERVER SNAPSHOT] Snapshot fetched live from Cloud Firestore backend. fromCache: false, hasPendingWrites: ${programSnap.metadata.hasPendingWrites}`);
+        }
+        programParticipantsCache = programSnap.docs;
+        return programParticipantsCache;
+    }
+
+    async function loadResultsStatus() {
+        if (resultsStatusCache !== null) {
+            resultSubmitted = resultsStatusCache.resultSubmitted;
+            resultPublished = resultsStatusCache.resultPublished;
+            return;
+        }
+        try {
+            const resultsRef = collection(db, "institutes", window.currentInstituteId, "results");
+            const resultsSnap = await getDocs(query(resultsRef, where("programId", "==", progId)));
+            resultSubmitted = false;
+            resultPublished = false;
+            if (!resultsSnap.empty) {
+                const resDoc = resultsSnap.docs[0].data();
+                if (resDoc.status === 'published') {
+                    resultPublished = true;
+                }
+                if (resDoc.markEntryStatus === 'submitted') {
+                    resultSubmitted = true;
+                }
+            }
+            resultsStatusCache = { resultSubmitted, resultPublished };
+        } catch (e) {
+            console.error("Error loading results status:", e);
+        }
+    }
+
+    // Load registrations mapping for duplicate validations and cross-program tag indicators
+    async function loadAllTeamRegistrations() {
+        const cacheKey = selectedTeamId;
+        if (registrationsByTeamCache.has(cacheKey)) {
+            const cached = registrationsByTeamCache.get(cacheKey);
+            registrationsMap = new Map(cached.registrationsMap);
+            registrationsProgramIdsMap = new Map(cached.registrationsProgramIdsMap);
+            programsMap = new Map(cached.programsMap);
+            studentGroupsMap = new Map(cached.studentGroupsMap);
+            allEventGroups = [...cached.allEventGroups];
+            return;
+        }
+
+        registrationsMap.clear();
+        registrationsProgramIdsMap.clear();
+        studentGroupsMap.clear();
+        allEventGroups = [];
+
+        try {
+            const instId = window.currentInstituteId;
+            const allProgs = await getCachedPrograms(instId);
+            programsMap = new Map(allProgs.map(p => [p.id, p]));
+
+            let docs = [];
+
+            // Try collectionGroup fetch using composite index (teamId, type)
+            try {
+                const qInd = query(
+                    collectionGroup(db, "participants"),
+                    where("teamId", "==", selectedTeamId),
+                    where("type", "==", "individual")
+                );
+                const qGrp = query(
+                    collectionGroup(db, "participants"),
+                    where("teamId", "==", selectedTeamId),
+                    where("type", "==", "group")
+                );
+                const [snapInd, snapGrp] = await Promise.all([
+                    getDocs(qInd),
+                    getDocs(qGrp)
+                ]);
+                docs = [...snapInd.docs, ...snapGrp.docs];
+            } catch (cgErr) {
+                console.warn("CollectionGroup query failed, scanning collections in batched promises:", cgErr);
+                const results = [];
+                const batchSize = 10;
+                for (let i = 0; i < allProgs.length; i += batchSize) {
+                    const chunk = allProgs.slice(i, i + batchSize);
+                    const chunkPromises = chunk.map(async (prog) => {
+                        const partRef = collection(db, "institutes", instId, "programs", prog.id, "participants");
+                        const q = query(partRef, where("teamId", "==", selectedTeamId));
+                        const snap = await getDocs(q);
+                        return snap.docs;
+                    });
+                    const chunkResults = await Promise.all(chunkPromises);
+                    results.push(...chunkResults);
+                }
+                docs = results.flat();
+            }
+
+            docs.forEach(d => {
+                const data = d.data();
+                const pathTokens = d.ref.path.split('/');
+                const pId = data.programId || pathTokens[3];
+                if (!pId) return;
+
+                const prog = programsMap.get(pId);
+                if (!prog) return;
+                const progName = (prog.programNumber ? `[#${prog.programNumber}] ` : '') + (prog.programName || 'Unknown Program');
+                const pType = (prog.programType || prog.type || 'individual').toLowerCase();
+                const isGroup = pType === 'group' || (pType === 'general' && prog.registrationType === 'group');
+
+                if (data.type === 'individual' && data.studentId) {
+                    const sId = data.studentId;
+                    if (!registrationsMap.has(sId)) registrationsMap.set(sId, new Set());
+                    registrationsMap.get(sId).add(progName);
+
+                    if (!registrationsProgramIdsMap.has(sId)) registrationsProgramIdsMap.set(sId, new Set());
+                    registrationsProgramIdsMap.get(sId).add(pId);
+                } else if (data.type === 'group' && Array.isArray(data.groups)) {
+                    data.groups.forEach(g => {
+                        const gName = g.name || 'Unnamed Group';
+                        const memberCount = g.members?.length || 0;
+                        if (Array.isArray(g.members)) {
+                            g.members.forEach(m => {
+                                const sId = m.studentId;
+                                if (sId) {
+                                    if (!registrationsMap.has(sId)) registrationsMap.set(sId, new Set());
+                                    registrationsMap.get(sId).add(`${progName} (${gName})`);
+
+                                    if (!registrationsProgramIdsMap.has(sId)) registrationsProgramIdsMap.set(sId, new Set());
+                                    registrationsProgramIdsMap.get(sId).add(pId);
+
+                                    if (pId === progId) {
+                                        studentGroupsMap.set(sId, {
+                                            groupName: gName,
+                                            teamName: data.teamName || 'Other Team',
+                                            memberCount: memberCount,
+                                            members: g.members || []
+                                        });
+                                    }
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+
+            // Load all other group names in this program across the entire institute (for quick group reuse copy)
+            if (isGroupEvent) {
+                const progDocs = await getProgramParticipantsDocs();
+                progDocs.forEach(d => {
+                    const data = d.data();
+                    if (data.type === 'group' && Array.isArray(data.groups)) {
+                        data.groups.forEach(g => {
+                            allEventGroups.push({
+                                id: g.id,
+                                name: g.name,
+                                teamId: data.teamId,
+                                teamName: data.teamName || 'Other Team',
+                                members: g.members || []
+                            });
+                        });
+                    }
+                });
+            }
+
+            // Cache the result
+            registrationsByTeamCache.set(cacheKey, {
+                registrationsMap: new Map(registrationsMap),
+                registrationsProgramIdsMap: new Map(registrationsProgramIdsMap),
+                programsMap: new Map(programsMap),
+                studentGroupsMap: new Map(studentGroupsMap),
+                allEventGroups: [...allEventGroups]
+            });
+
+        } catch (err) {
+            console.error("Error loading all registrations:", err);
+        }
+    }
+
+    async function loadStudentsForSelection() {
+        const showSkel = document.getElementById('pwStudentsSkeleton');
+        const listEl = document.getElementById('pwStudentList');
+        if (showSkel) showSkel.style.display = 'block';
+        if (listEl) listEl.innerHTML = '';
+
+        selectedStudentIds.clear();
+        savedIndividualStudentIds = new Set();
+        assignedParticipantsAll = [];
+        participantDocIds.clear();
+        refreshSelectedPreviews();
+
+        try {
+            await loadResultsStatus();
+            await loadAllTeamRegistrations();
+
+            const targetTeamId = window.normalizeTeamId(selectedTeamId);
+            const studentsCacheKey = targetTeamId;
+
+            if (!isGroupEvent) {
+                const progDocs = await getProgramParticipantsDocs();
+                progDocs.forEach(d => {
+                    const data = d.data();
+                    const matchesCategory = (pType === 'general') || ((data.categoryId || '') === inheritedCategoryId);
+                    if (data.type === 'individual' && window.normalizeTeamId(data.teamId) === targetTeamId && matchesCategory && data.studentId) {
+                        savedIndividualStudentIds.add(data.studentId);
+                        participantDocIds.set(data.studentId, d.id);
+                        assignedParticipantsAll.push({
+                            studentId: data.studentId,
+                            studentName: data.studentName || '',
+                            chestNumber: data.chestNumber || '',
+                            className: data.className || data.class || '—'
+                        });
+                    }
+                });
+            }
+
+            if (studentsByTeamCache.has(studentsCacheKey)) {
+                studentsAll = [...studentsByTeamCache.get(studentsCacheKey)];
+            } else {
+                // Fetch eligible student records
+                let q;
+                if (pType === 'general' || inheritedCategoryId === 'general_programs') {
+                    q = query(
+                        collection(db, "institutes", window.currentInstituteId, "students"),
+                        where('teamId', '==', targetTeamId)
+                    );
+                } else {
+                    q = query(
+                        collection(db, "institutes", window.currentInstituteId, "students"),
+                        where('categoryId', '==', inheritedCategoryId),
+                        where('teamId', '==', targetTeamId)
+                    );
+                }
+
+                // Apply direct queries for non-general events
+                if (pType !== 'general' && inheritedCategoryId !== 'general_programs') {
+                    if (genderFilter === 'Boys') q = query(q, where('gender', '==', 'Male'));
+                    if (genderFilter === 'Girls') q = query(q, where('gender', '==', 'Female'));
+                }
+
+                let snap;
+                try {
+                    snap = await getDocs(q);
+                } catch (err) {
+                    let qFallback;
+                    if (pType === 'general' || inheritedCategoryId === 'general_programs') {
+                        qFallback = query(
+                            collection(db, "institutes", window.currentInstituteId, "students"),
+                            where('teamId', '==', targetTeamId)
+                        );
+                    } else {
+                        qFallback = query(
+                            collection(db, "institutes", window.currentInstituteId, "students"),
+                            where('categoryId', '==', inheritedCategoryId)
+                        );
+                    }
+                    snap = await getDocs(qFallback);
+                }
+
+                studentsAll = snap.docs.map(d => {
+                    const s = d.data();
+                    return {
+                        id: d.id || '',
+                        name: s.name || '',
+                        chestNumber: s.chestNumber || '',
+                        gender: s.gender || '',
+                        teamId: s.teamId || '',
+                        categoryId: s.categoryId || '',
+                        categoryName: s.categoryName || '',
+                        classId: s.classId || s.class || '',
+                        className: s.className || ''
+                    };
+                });
+
+                // Post-filtering safeties
+                studentsAll = studentsAll.filter(s => window.normalizeTeamId(s.teamId) === targetTeamId);
+                if (genderFilter === 'Boys') {
+                    studentsAll = studentsAll.filter(s => s.gender === 'Male');
+                } else if (genderFilter === 'Girls') {
+                    studentsAll = studentsAll.filter(s => s.gender === 'Female');
+                }
+
+                studentsAll = uniqById(studentsAll);
+                studentsByTeamCache.set(studentsCacheKey, [...studentsAll]);
+            }
+
+            studentsFiltered = studentsAll;
+            applyStudentSearchFilter();
+
+            // Set stats details
+            const label = document.getElementById('pwStudentsCountLabel');
+            if (label) label.textContent = `Total: ${studentsAll.length}`;
+
+            renderAssignedManagement();
+            if (isGroupEvent) {
+                const selectEl = document.getElementById('pwCopyGroupSelect');
+                if (selectEl) {
+                    selectEl.innerHTML = `<option value="">Copy members from existing group...</option>` +
+                        allEventGroups.map(g => `<option value="${g.teamId}:${g.id}">${window.escapeHTML(g.teamName)} - ${window.escapeHTML(g.name)} (${g.members?.length || 0} members)</option>`).join('');
+                }
+            }
+
+        } catch (e) {
+            console.error("Error loading students:", e);
+            if (listEl) listEl.innerHTML = `<div class="pw-empty">Failed to load eligible students.</div>`;
+        } finally {
+            if (showSkel) showSkel.style.display = 'none';
+        }
+    }
+
+    function applyStudentSearchFilter() {
+        const q = normalizeText(document.getElementById('pwStudentSearch')?.value);
+        const classSel = selectedClassId;
+
+        let filtered = studentsAll;
+        if (q) {
+            filtered = filtered.filter(s => {
+                const hay = `${s.name} ${s.chestNumber || ''}`.toLowerCase();
+                return hay.includes(q);
+            });
+        }
+        if (classSel) {
+            filtered = filtered.filter(s => s.classId === classSel);
+        }
+
+        // Apply quick pills filter
+        const assignedGroupStudentIds = new Set();
+        if (isGroupEvent) {
+            for (const g of groups) {
+                if (g.members) {
+                    for (const m of g.members) {
+                        if (m.studentId) assignedGroupStudentIds.add(m.studentId);
+                    }
+                }
+            }
+        }
+
+        if (activeFilter === 'eligible') {
+            filtered = filtered.filter(s => {
+                const isAssigned = savedIndividualStudentIds.has(s.id) || (isGroupEvent && assignedGroupStudentIds.has(s.id));
+                return !isAssigned;
+            });
+        } else if (activeFilter === 'selected') {
+            filtered = filtered.filter(s => {
+                const isAssigned = savedIndividualStudentIds.has(s.id) || (isGroupEvent && assignedGroupStudentIds.has(s.id));
+                return isAssigned || selectedStudentIds.has(s.id);
+            });
+        }
+
+        studentsFiltered = filtered;
+        activeStudentIndex = -1;
+        renderLimit = 80;
+        renderStudentList();
+    }
+
+    function isCategoryMatching(docCategoryId, selectedCatId, inheritedCatId, programType) {
+        if (programType === 'general' || selectedCatId === 'general_programs' || inheritedCatId === 'general_programs') {
+            return true;
+        }
+        const docCat = (docCategoryId || '').trim();
+        if (!docCat) return true;
+
+        const selCat = (selectedCatId || '').trim();
+        const inhCat = (inheritedCatId || '').trim();
+
+        if (docCat === selCat || docCat === inhCat) return true;
+        if (normalizeText(docCat) === normalizeText(selCat) || normalizeText(docCat) === normalizeText(inhCat)) return true;
+
+        return false;
+    }
+
+    // 5. Group Persistence & Management Methods
+    async function getOrCreateTeamParticipantContainer() {
+        console.log(`[PERMANENT ARCHITECTURE] getOrCreateTeamParticipantContainer() invoked for programId: "${progId}", teamId: "${selectedTeamId}"`);
+        const partRef = collection(db, "institutes", window.currentInstituteId, "programs", progId, "participants");
+        const targetTeamId = window.normalizeTeamId(selectedTeamId);
+        
+        // Search ALL existing participant containers for programId + teamId
+        const q = query(
+            partRef,
+            where('teamId', '==', targetTeamId)
+        );
+        const snap = await getDocs(q);
+        
+        // Filter container documents matching group type OR having group arrays
+        const groupDocs = snap.docs.filter(d => {
+            const data = d.data();
+            return data.type === 'group' || Array.isArray(data.groups);
+        });
+
+        if (groupDocs.length > 0) {
+            // Prefer container matching selected category or choose first existing container
+            const matched = groupDocs.find(d => isCategoryMatching(d.data().categoryId, selectedCategoryId, inheritedCategoryId, pType)) || groupDocs[0];
+            console.log(`[CONTAINER REUSE] Found ${groupDocs.length} existing container(s) for teamId "${targetTeamId}". Reusing canonical container doc ID: "${matched.id}"`);
+            groupContainerRef = matched.ref;
+            return { ref: matched.ref, data: matched.data() };
+        }
+
+        // Create ONLY if ZERO containers exist for this (programId + teamId)
+        const newRef = doc(partRef);
+        console.warn(`[CONTAINER CREATION] ⚠ Creating NEW canonical container doc ID: "${newRef.id}" for teamId: "${targetTeamId}"`);
+        await setDoc(newRef, {
+            teamId: targetTeamId,
+            teamName: selectedTeamId === 'teamless' ? 'No Team' : (teamById.get(selectedTeamId)?.name || ''),
+            categoryId: selectedCategoryId || inheritedCategoryId || 'general_programs',
+            classId: selectedClassId || '',
+            programId: progId || '',
+            type: 'group',
+            groups: [],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+        });
+
+        programParticipantsCache = null;
+        groupContainerRef = newRef;
+        return { ref: newRef, data: { groups: [] } };
+    }
+
+    async function loadGroupsForTeam() {
+        const targetTeamId = window.normalizeTeamId(selectedTeamId);
+
+        const listEl = document.getElementById('pwGroupsList');
+        if (listEl) listEl.innerHTML = `<div class="pw-empty">Loading groups...</div>`;
+
+        const progDocs = await getProgramParticipantsDocs();
+        console.log(`====================================================================`);
+        console.log(`[PERMANENT ARCHITECTURE] LOAD GROUPS FOR TEAM`);
+        console.log(`Program ID: ${progId} | Selected Team: ${selectedTeamId} (normalized: "${targetTeamId}")`);
+        console.log(`====================================================================`);
+
+        // STEP 1: Read-side compatibility - Find ALL container docs for (programId + teamId)
+        const matchingContainerDocs = [];
+        progDocs.forEach(d => {
+            const data = d.data();
+            const normDocTeamId = window.normalizeTeamId(data.teamId);
+            const matchesType = data.type === 'group' || Array.isArray(data.groups);
+            const matchesTeam = normDocTeamId === targetTeamId;
+
+            if (matchesType && matchesTeam) {
+                matchingContainerDocs.push(d);
+            }
+        });
+
+        console.log(`[CONTAINER AUDIT] Found ${matchingContainerDocs.length} participant container document(s) for team "${targetTeamId}".`);
+
+        if (matchingContainerDocs.length === 0) {
+            groups = [];
+            groupContainerRef = null;
+            if (listEl) {
+                listEl.innerHTML = `
+                    <div style="text-align:center; padding:2rem; color:var(--pw-slate-500); border: 1.5px dashed var(--pw-border); border-radius:var(--pw-radius-md); font-size:0.8rem;">
+                        No groups created yet.
+                    </div>`;
+            }
+            refreshSelectedPreviews();
+            renderAssignedManagement();
+            return;
+        }
+
+        // Select Canonical Container
+        const canonicalDoc = matchingContainerDocs.find(d => isCategoryMatching(d.data().categoryId, selectedCategoryId, inheritedCategoryId, pType)) || matchingContainerDocs[0];
+        groupContainerRef = canonicalDoc.ref;
+
+        // STEP 1 & 4: Merge ALL groups[] arrays across all matching containers, deduplicating by group.id / unique signature
+        const mergedGroupsMap = new Map();
+        const groupSeenSignatures = new Set();
+
+        matchingContainerDocs.forEach(docSnap => {
+            const docData = docSnap.data();
+            const docGroupList = Array.isArray(docData.groups) ? docData.groups : [];
+
+            docGroupList.forEach(g => {
+                const groupMembers = (g.members || []).map(m => ({
+                    studentId: m.studentId || '',
+                    studentName: m.studentName || ''
+                }));
+                const memberSig = groupMembers.map(m => m.studentId).sort().join('_');
+                const sigKey = `${(g.name || '').trim().toLowerCase()}::${memberSig}`;
+
+                const gId = g.id || `grp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+                if (!mergedGroupsMap.has(gId) && !groupSeenSignatures.has(sigKey)) {
+                    groupSeenSignatures.add(sigKey);
+                    mergedGroupsMap.set(gId, {
+                        id: gId,
+                        name: g.name || 'Unnamed Group',
+                        members: groupMembers
+                    });
+                } else if (mergedGroupsMap.has(gId)) {
+                    // Merge members if group ID already tracked
+                    const existingGroup = mergedGroupsMap.get(gId);
+                    const existingMemberIds = new Set(existingGroup.members.map(m => m.studentId));
+                    groupMembers.forEach(m => {
+                        if (m.studentId && !existingMemberIds.has(m.studentId)) {
+                            existingMemberIds.add(m.studentId);
+                            existingGroup.members.push(m);
+                        }
+                    });
+                }
+            });
+        });
+
+        groups = Array.from(mergedGroupsMap.values());
+        console.log(`[MERGED RESULT] Successfully aggregated ${groups.length} unique group(s) across ${matchingContainerDocs.length} container doc(s).`);
+
+        // STEP 4: Self Healing - Consolidate duplicate containers if multiple exist
+        if (matchingContainerDocs.length > 1) {
+            console.warn(`[SELF HEALING] Multiple containers detected (${matchingContainerDocs.length}). Consolidating all groups into canonical doc ID: "${canonicalDoc.id}"...`);
+            try {
+                // Update canonical document with complete merged groups array
+                await setDoc(canonicalDoc.ref, {
+                    teamId: targetTeamId,
+                    teamName: selectedTeamId === 'teamless' ? 'No Team' : (teamById.get(selectedTeamId)?.name || ''),
+                    categoryId: selectedCategoryId || inheritedCategoryId || 'general_programs',
+                    classId: selectedClassId || '',
+                    programId: progId || '',
+                    type: 'group',
+                    groups: groups.map(g => ({
+                        id: g.id,
+                        name: g.name,
+                        members: g.members
+                    })),
+                    updatedAt: serverTimestamp()
+                }, { merge: true });
+
+                // Delete ONLY redundant secondary containers after successful merge write
+                const redundantDocs = matchingContainerDocs.filter(d => d.id !== canonicalDoc.id);
+                for (const dupDoc of redundantDocs) {
+                    console.log(`[SELF HEALING] Purging redundant container doc ID: "${dupDoc.id}"`);
+                    await deleteDoc(dupDoc.ref);
+                }
+                programParticipantsCache = null;
+                console.log(`[SELF HEALING COMPLETE] Consolidated ${matchingContainerDocs.length} containers into 1 canonical container.`);
+            } catch (err) {
+                console.error("[SELF HEALING ERROR] Failed to consolidate containers:", err);
+            }
+        }
+
+        if (!groups.some(g => g.id === selectedGroupId)) {
+            selectedGroupId = '';
+            selectedGroupMemberIds.clear();
+        }
+
+        renderGroupsList();
+        renderAssignedManagement();
+    }
+
+    async function persistGroups() {
+        console.log(`[PERSIST GROUPS] Persisting ${groups.length} group(s). Selected container ref: "${groupContainerRef ? groupContainerRef.id : 'NULL'}"`);
+        if (!groupContainerRef) {
+            await getOrCreateTeamParticipantContainer();
+        }
+        if (!groupContainerRef) return;
+
+        const normalizedGroups = groups.map(g => ({
+            id: g.id || '',
+            name: g.name || '',
+            members: (g.members || []).map(m => ({
+                studentId: m.studentId || '',
+                studentName: m.studentName || ''
+            }))
+        }));
+
+        const targetTeamId = window.normalizeTeamId(selectedTeamId);
+        await setDoc(groupContainerRef, {
+            teamId: targetTeamId,
+            teamName: targetTeamId === '' ? 'No Team' : (teamById.get(selectedTeamId)?.name || ''),
+            categoryId: selectedCategoryId || inheritedCategoryId || '',
+            classId: selectedClassId || '',
+            programId: progId || '',
+            type: 'group',
+            groups: normalizedGroups,
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        // STEP 6: Cache Safety - Invalidate memory cache to force fresh reads
+        programParticipantsCache = null;
+        registrationsByTeamCache.clear();
+        await updateDashboardMetadata(window.currentInstituteId);
+    }
+
+    async function updateGroup(groupId, updateFn) {
+        try {
+            const groupIdx = groups.findIndex(g => g.id === groupId);
+            if (groupIdx === -1) return;
+
+            groups[groupIdx] = updateFn(groups[groupIdx]);
+            await persistGroups();
+            window.showToast('Group updated successfully!', 'success');
+            await loadGroupsForTeam();
+        } catch (e) {
+            console.error(e);
+            window.showToast('Failed to update group.', 'error');
+        }
+    }
+
+    function renderGroupsList() {
+        const el = document.getElementById('pwGroupsList');
+        if (!el) return;
+
+        if (!groups || groups.length === 0) {
+            el.innerHTML = `
+                <div style="text-align:center; padding:2rem; color:var(--pw-slate-500); border: 1.5px dashed var(--pw-border); border-radius:var(--pw-radius-md); font-size:0.8rem;">
+                    No groups created yet.
+                </div>
+            `;
+            return;
+        }
+
+        el.innerHTML = groups.map((g, idx) => {
+            const membersCount = g.members?.length || 0;
+            const isCardSelected = g.id === selectedGroupId;
+            const selectedClass = isCardSelected ? 'is-selected' : '';
+            return `
+        <div class="pw-group-card ${selectedClass}" data-group-id="${g.id}">
+          <div class="pw-group-card-header">
+            <div class="pw-group-card-title">
+              📁 ${window.escapeHTML(g.name)}
+            </div>
+            <span class="pw-group-card-badge">👥 ${membersCount} Member${membersCount === 1 ? '' : 's'}</span>
+          </div>
+
+          <div class="pw-group-card-body">
+            <div class="pw-group-members-list">
+              ${membersCount === 0 ? `
+                <span style="font-size: 0.72rem; color: var(--pw-slate-500); font-style: italic;">No members assigned.</span>
+              ` : g.members.map(m => {
+                const isChipSelected = isCardSelected && selectedGroupMemberIds.has(m.studentId);
+                const chipSelectedClass = isChipSelected ? 'is-selected' : '';
+                return `
+                <span class="stu-tag pw-group-member-chip ${chipSelectedClass}" data-group-id="${g.id}" data-student-id="${m.studentId}" style="background:var(--pw-slate-50); padding: 0.2rem 0.45rem; display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                  👤 ${window.escapeHTML(m.studentName)}
+                  <button class="pw-group-member-remove-btn" data-group-id="${g.id}" data-student-id="${m.studentId}" data-student-name="${window.escapeHTML(m.studentName)}" title="Remove member">✕</button>
+                </span>
+                `;
+            }).join('')}
+            </div>
+          </div>
+
+          <div class="pw-group-card-actions">
+            <div class="pw-group-card-btns-left">
+              <button class="btn-group-action pw-edit-group-btn" data-edit-group-id="${g.id}">
+                ✏️ Rename
+              </button>
+              <button class="btn-group-action btn-danger-action pw-delete-group-btn" data-delete-group-id="${g.id}">
+                🗑️ Delete
+              </button>
+            </div>
+            <div class="pw-group-card-btns-right">
+              <button class="btn-group-action" data-add-group-id="${g.id}" disabled>
+                ➕ Add Selected
+              </button>
+              <button class="btn-group-action" data-remove-group-id="${g.id}" disabled>
+                ➖ Remove Selected
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+        }).join('');
+
+        // Wire group actions
+        el.querySelectorAll('[data-edit-group-id]').forEach(btn => {
+            btn.onclick = async (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-edit-group-id');
+                const g = groups.find(x => x.id === id);
+                if (!g) return;
+                const next = await window.customPrompt('Enter new name for the group:', g.name, 'Rename Group');
+                if (next == null) return;
+                const newName = next.trim();
+                if (!newName) {
+                    window.showToast('Group name cannot be empty.', 'error');
+                    return;
+                }
+                updateGroup(id, (group) => ({ ...group, name: newName }));
+            };
+        });
+
+        el.querySelectorAll('[data-delete-group-id]').forEach(btn => {
+            btn.onclick = async (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-delete-group-id');
+                const confirmed = await window.customConfirm('Are you sure you want to delete this group?');
+                if (!confirmed) return;
+                groups = groups.filter(x => x.id !== id);
+                if (selectedGroupId === id) {
+                    selectedGroupId = '';
+                    selectedGroupMemberIds.clear();
+                }
+                await persistGroups();
+
+                const progRef = doc(db, "institutes", window.currentInstituteId, "programs", progId);
+                await setDoc(progRef, { participantCount: increment(-1) }, { merge: true });
+                await updateDashboardMetadata(window.currentInstituteId);
+
+                window.showToast('Group deleted.', 'success');
+                await loadGroupsForTeam();
+            };
+        });
+
+        // Wire individual member delete button
+        el.querySelectorAll('.pw-group-member-remove-btn').forEach(btn => {
+            btn.onclick = async (e) => {
+                e.stopPropagation();
+                const groupId = btn.getAttribute('data-group-id');
+                const studentId = btn.getAttribute('data-student-id');
+                const studentName = btn.getAttribute('data-student-name');
+
+                const confirmed = await window.customConfirm("Remove this student from the group?", "Remove Member", {
+                    okText: "Remove",
+                    cancelText: "Cancel",
+                    danger: true
+                });
+                if (!confirmed) return;
+
+                const g = groups.find(x => x.id === groupId);
+                if (!g) return;
+
+                g.members = (g.members || []).filter(m => m.studentId !== studentId);
+
+                // Update local state maps instantly
+                studentGroupsMap.delete(studentId);
+                if (registrationsMap.has(studentId)) {
+                    registrationsMap.get(studentId).delete(`${progName} (${g.name})`);
+                }
+
+                // Update other group members' maps count/info
+                g.members.forEach(m => {
+                    studentGroupsMap.set(m.studentId, {
+                        groupName: g.name,
+                        teamName: teamById.get(selectedTeamId)?.name || 'This Team',
+                        memberCount: g.members.length,
+                        members: g.members
+                    });
+                });
+
+                // Clear selection buffer just in case
+                selectedStudentIds.delete(studentId);
+                selectedGroupMemberIds.delete(studentId);
+
+                // Render UI updates immediately
+                renderGroupsList();
+                renderStudentList();
+                refreshSelectedPreviews();
+
+                try {
+                    await persistGroups();
+                    window.showToast(`${studentName} removed from group.`, 'success');
+                } catch (err) {
+                    console.error("Failed to persist groups:", err);
+                    window.showToast("Failed to update group in database.", "error");
+                }
+            };
+        });
+
+        // Wire member chips toggle selection
+        el.querySelectorAll('.pw-group-member-chip').forEach(chip => {
+            chip.onclick = (e) => {
+                if (e.target.closest('.pw-group-member-remove-btn')) return;
+                const groupId = chip.getAttribute('data-group-id');
+                const studentId = chip.getAttribute('data-student-id');
+
+                if (selectedGroupId !== groupId) {
+                    selectedGroupId = groupId;
+                    selectedGroupMemberIds.clear();
+                }
+
+                if (selectedGroupMemberIds.has(studentId)) {
+                    selectedGroupMemberIds.delete(studentId);
+                } else {
+                    selectedGroupMemberIds.add(studentId);
+                }
+
+                renderGroupsList();
+            };
+        });
+
+        // Wire group card selection click
+        el.querySelectorAll('.pw-group-card').forEach(card => {
+            card.onclick = (e) => {
+                if (e.target.closest('button') || e.target.closest('.pw-group-member-chip')) return;
+                const groupId = card.getAttribute('data-group-id');
+                if (selectedGroupId !== groupId) {
+                    selectedGroupId = groupId;
+                    selectedGroupMemberIds.clear();
+                    updateActionButtonsState();
+                }
+            };
+        });
+
+        el.querySelectorAll('[data-add-group-id]').forEach(btn => {
+            btn.onclick = async (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-add-group-id');
+                if (selectedGroupId !== id || selectedStudentIds.size === 0) return;
+                const g = groups.find(x => x.id === id);
+                if (!g) return;
+
+                // Validation:
+                // 1. Prevent duplicate members inside the same group.
+                const existingMemberIds = new Set((g.members || []).map(m => m.studentId));
+                const duplicates = [];
+                for (const studentId of selectedStudentIds) {
+                    if (existingMemberIds.has(studentId)) {
+                        const s = studentsAll.find(x => x.id === studentId);
+                        if (s) duplicates.push(s.name);
+                    }
+                }
+                if (duplicates.length > 0) {
+                    window.showToast(`Duplicate members: ${duplicates.join(', ')} already in the group.`, "error");
+                    return;
+                }
+
+                // 2. Respect maximum member limit.
+                const maxVal = progData.maxParticipants || 0;
+                const currentCount = g.members?.length || 0;
+                const newCount = currentCount + selectedStudentIds.size;
+                if (maxVal > 0 && newCount > maxVal) {
+                    window.showToast(`Cannot add members. This group has a limit of ${maxVal} members.`, "error");
+                    return;
+                }
+
+                const toAdd = studentsAll
+                    .filter(s => selectedStudentIds.has(s.id))
+                    .map(s => ({ studentId: s.id, studentName: s.name }));
+
+                g.members = [...(g.members || []), ...toAdd];
+
+                // Update local state maps instantly
+                toAdd.forEach(s => {
+                    studentGroupsMap.set(s.studentId, {
+                        groupName: g.name,
+                        teamName: teamById.get(selectedTeamId)?.name || 'This Team',
+                        memberCount: g.members.length,
+                        members: g.members
+                    });
+                    if (!registrationsMap.has(s.studentId)) registrationsMap.set(s.studentId, new Set());
+                    registrationsMap.get(s.studentId).add(`${progName} (${g.name})`);
+                });
+
+                // Update other group members' maps count/info
+                g.members.forEach(m => {
+                    studentGroupsMap.set(m.studentId, {
+                        groupName: g.name,
+                        teamName: teamById.get(selectedTeamId)?.name || 'This Team',
+                        memberCount: g.members.length,
+                        members: g.members
+                    });
+                });
+
+                // Clear selection buffer
+                selectedStudentIds.clear();
+
+                // Update UI immediately
+                renderGroupsList();
+                renderStudentList();
+                refreshSelectedPreviews();
+
+                try {
+                    await persistGroups();
+                    window.showToast('Students added to group!', 'success');
+                } catch (err) {
+                    console.error("Failed to persist groups:", err);
+                    window.showToast("Failed to update group in database.", "error");
+                }
+            };
+        });
+
+        el.querySelectorAll('[data-remove-group-id]').forEach(btn => {
+            btn.onclick = async (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-remove-group-id');
+                if (selectedGroupId !== id || selectedGroupMemberIds.size === 0) return;
+                const g = groups.find(x => x.id === id);
+                if (!g) return;
+
+                const confirmed = await window.customConfirm("Remove the selected members from the group?", "Remove Members", {
+                    okText: "Remove",
+                    cancelText: "Cancel",
+                    danger: true
+                });
+                if (!confirmed) return;
+
+                const removeIds = new Set([...selectedGroupMemberIds]);
+                const newMembers = (g.members || []).filter(m => !removeIds.has(m.studentId));
+
+                if (newMembers.length === 0) {
+                    window.showToast('A group must have at least one member. Cannot leave it empty.', 'error');
+                    return;
+                }
+
+                // Update local state maps instantly
+                for (const studentId of removeIds) {
+                    studentGroupsMap.delete(studentId);
+                    if (registrationsMap.has(studentId)) {
+                        registrationsMap.get(studentId).delete(`${progName} (${g.name})`);
+                    }
+                }
+
+                g.members = newMembers;
+
+                // Update remaining group members' maps count/info
+                g.members.forEach(m => {
+                    studentGroupsMap.set(m.studentId, {
+                        groupName: g.name,
+                        teamName: teamById.get(selectedTeamId)?.name || 'This Team',
+                        memberCount: g.members.length,
+                        members: g.members
+                    });
+                });
+
+                // Clear selection buffer
+                selectedGroupMemberIds.clear();
+
+                // Update UI immediately
+                renderGroupsList();
+                renderStudentList();
+                refreshSelectedPreviews();
+
+                try {
+                    await persistGroups();
+                    window.showToast('Students removed from group.', 'success');
+                } catch (err) {
+                    console.error("Failed to persist groups:", err);
+                    window.showToast("Failed to update group in database.", "error");
+                }
+            };
+        });
+
+        updateActionButtonsState();
+    }
+
+    // 6. Navigation and Initialization Bindings
+    document.getElementById('pwBackBtn').onclick = () => {
+        const root = document.querySelector('[data-pw-root]');
+        const returnBack = () => {
+            topActions.innerHTML = '';
+            const progTab = document.querySelector('.nav-item[data-view="programs"]');
+            if (progTab) {
+                progTab.click();
+            } else if (typeof window.navigateTo === 'function') {
+                window.navigateTo('programs');
+            }
+        };
+
+        if (root) {
+            root.style.animation = 'pwSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) reverse forwards';
+            setTimeout(returnBack, 300);
+        } else {
+            returnBack();
+        }
+    };
+
+    // Collapsible Assigned Participants/Registered Groups section on mobile
+    const rightPanelHeader = document.getElementById('pwRightPanelHeader');
+    const rightPanel = document.getElementById('pwRightPanel');
+    if (rightPanelHeader && rightPanel) {
+        rightPanelHeader.onclick = () => {
+            if (window.innerWidth <= 991) {
+                rightPanel.classList.toggle('is-expanded');
+            }
+        };
+    }
+
+    // 7. Initial Initialization
+    async function initialize() {
+        await loadTeams();
+        const categories = await loadCategories();
+
+        // Resolve canonical category ID
+        if (inheritedCategoryId && inheritedCategoryId !== 'general_programs' && !categoriesById.has(inheritedCategoryId)) {
+            for (const [id, data] of categoriesById.entries()) {
+                if (normalizeText(data.name) === normalizeText(inheritedCategoryId)) {
+                    inheritedCategoryId = id;
+                    selectedCategoryId = id;
+                    break;
+                }
+            }
+        } else {
+            selectedCategoryId = inheritedCategoryId;
+        }
+
+        const catData = categoriesById.get(inheritedCategoryId);
+        const headerCatLabel = document.getElementById('pwHeaderCategoryLabel');
+        if (headerCatLabel) {
+            headerCatLabel.textContent = catData?.name || (inheritedCategoryId === 'general_programs' ? 'General Program' : inheritedCategoryId);
+        }
+
+        // Populate class dropdown
+        const classes = (pType === 'general' || inheritedCategoryId === 'general_programs') ? getAllClasses() : getClassesForCategory(inheritedCategoryId);
+        const classFilter = document.getElementById('pwClassFilter');
+        if (classFilter) {
+            classFilter.innerHTML = `<option value="">All Classes</option>` +
+                classes.map(c => `<option value="${c.id}">${window.escapeHTML(c.name)}</option>`).join('');
+            classFilter.disabled = false;
+        }
+
+        // Select first team as default
+        if (teams.length > 0) {
+            selectedTeamId = teams[0].id;
+            const tName = teams[0].name;
+            setPill('Team', tName);
+            const teamBadge = document.getElementById('pwHeaderTeamBadge');
+            if (teamBadge) {
+                teamBadge.textContent = `Team: ${tName}`;
+            }
+        }
+
+        renderTeamSegments();
+
+        // Delegate student card click handler for efficiency
+        const studentListEl = document.getElementById('pwStudentList');
+        if (studentListEl) {
+            studentListEl.onclick = (e) => {
+                const card = e.target.closest('.stu-card');
+                if (!card) return;
+                const id = card.getAttribute('data-stu-id');
+                const stu = studentsAll.find(x => x.id === id);
+                if (!stu) return;
+
+                const assignedGroupStudentIds = new Set();
+                if (isGroupEvent) {
+                    for (const g of groups) {
+                        if (g.members) {
+                            for (const m of g.members) {
+                                if (m.studentId) assignedGroupStudentIds.add(m.studentId);
+                            }
+                        }
+                    }
+                }
+
+                const isAssigned = savedIndividualStudentIds.has(id) || (isGroupEvent && assignedGroupStudentIds.has(id));
+                if (isAssigned) {
+                    window.showToast("This student is already registered for this program.", "error");
+                    return;
+                }
+
+                toggleStudentSelection(stu);
+            };
+        }
+
+        // Team segment selection listener
+        document.getElementById('pwTeamList')?.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-team-segment]');
+            if (!btn) return;
+
+            const id = btn.getAttribute('data-team-segment');
+            selectedTeamId = id;
+            selectedStudentIds.clear();
+            selectedGroupId = '';
+            selectedGroupMemberIds.clear();
+            groups = [];
+
+            // Segment UI active classes toggling
+            document.querySelectorAll('[data-team-segment]').forEach(b => b.classList.remove('is-active'));
+            btn.classList.add('is-active');
+            autoScrollSelectedTeamIntoView();
+            updateTeamNavButtons();
+
+            const tName = selectedTeamId === 'teamless' ? 'No Team' : (teamById.get(selectedTeamId)?.name || '');
+            setPill('Team', tName);
+            const teamBadge = document.getElementById('pwHeaderTeamBadge');
+            if (teamBadge) {
+                teamBadge.textContent = `Team: ${tName || '—'}`;
+            }
+
+            // Enable inputs
+            const searchInput = document.getElementById('pwStudentSearch');
+            if (searchInput) searchInput.disabled = false;
+
+            loadStudentsForSelection();
+            if (isGroupEvent) loadGroupsForTeam();
+        });
+
+        // Team selector navigation & interaction handlers
+        const teamListContainer = document.getElementById('pwTeamList');
+        const prevBtn = document.getElementById('pwTeamNavPrev');
+        const nextBtn = document.getElementById('pwTeamNavNext');
+
+        if (teamListContainer) {
+            // Update button states on scroll
+            teamListContainer.addEventListener('scroll', updateTeamNavButtons, { passive: true });
+
+            // Horizontal scroll for team selector using mouse wheel on desktop
+            teamListContainer.addEventListener('wheel', (e) => {
+                if (e.deltaY !== 0 && e.deltaX === 0) {
+                    e.preventDefault();
+                    teamListContainer.scrollLeft += e.deltaY;
+                }
+            }, { passive: false });
+
+            // Mouse Drag-to-Scroll on Desktop
+            let isDragging = false;
+            let startX = 0;
+            let scrollStartLeft = 0;
+            let draggedDistance = 0;
+
+            teamListContainer.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                isDragging = true;
+                draggedDistance = 0;
+                startX = e.pageX - teamListContainer.offsetLeft;
+                scrollStartLeft = teamListContainer.scrollLeft;
+                teamListContainer.style.cursor = 'grabbing';
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                const x = e.pageX - teamListContainer.offsetLeft;
+                const walk = (x - startX);
+                draggedDistance = Math.abs(walk);
+                if (draggedDistance > 3) {
+                    e.preventDefault();
+                    teamListContainer.scrollLeft = scrollStartLeft - walk;
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                if (isDragging) {
+                    isDragging = false;
+                    teamListContainer.style.cursor = '';
+                }
+            });
+
+            // Prevent team button click if user was dragging
+            teamListContainer.addEventListener('click', (e) => {
+                if (draggedDistance > 5) {
+                    e.stopImmediatePropagation();
+                    e.preventDefault();
+                    draggedDistance = 0;
+                }
+            }, true);
+        }
+
+        // Left / Right arrow navigation click handlers
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => {
+                if (teamListContainer) {
+                    teamListContainer.scrollBy({ left: -200, behavior: 'smooth' });
+                }
+            });
+        }
+
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => {
+                if (teamListContainer) {
+                    teamListContainer.scrollBy({ left: 200, behavior: 'smooth' });
+                }
+            });
+        }
+
+        // Smart Filters (pills) logic
+        document.querySelectorAll('.pw-filter-pill').forEach(pill => {
+            pill.onclick = () => {
+                document.querySelectorAll('.pw-filter-pill').forEach(p => p.classList.remove('is-active'));
+                pill.classList.add('is-active');
+                activeFilter = pill.getAttribute('data-filter');
+                applyStudentSearchFilter();
+            };
+        });
+
+        // Keyboard navigation binding
+        document.addEventListener('keydown', (e) => {
+            const listEl = document.getElementById('pwStudentList');
+            const searchInput = document.getElementById('pwStudentSearch');
+            if (!listEl || !studentsFiltered.length) return;
+
+            // Ctrl+F or / focuses search input
+            if ((e.ctrlKey && e.key === 'f') || e.key === '/') {
+                if (document.activeElement !== searchInput) {
+                    e.preventDefault();
+                    searchInput?.focus();
+                    searchInput?.select();
+                }
+                return;
+            }
+
+            if (document.activeElement === searchInput) {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    searchInput.blur();
+                    activeStudentIndex = 0;
+                    renderStudentList();
+                }
+                return;
+            }
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                activeStudentIndex = Math.min(activeStudentIndex + 1, Math.min(studentsFiltered.length, renderLimit) - 1);
+                renderStudentList();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                activeStudentIndex = Math.max(activeStudentIndex - 1, 0);
+                renderStudentList();
+            } else if (e.key === ' ' || e.key === 'Spacebar') {
+                if (activeStudentIndex !== -1) {
+                    e.preventDefault();
+                    const s = studentsFiltered[activeStudentIndex];
+                    if (s) toggleStudentSelection(s);
+                }
+            } else if (e.key === 'Enter') {
+                if (activeStudentIndex !== -1) {
+                    e.preventDefault();
+                    const s = studentsFiltered[activeStudentIndex];
+                    if (s) toggleStudentSelection(s);
+                }
+            }
+        });
+
+        // Infinite lazy scroll
+        const scrollContainer = document.getElementById('pwStudentListScroll');
+        if (scrollContainer) {
+            scrollContainer.onscroll = () => {
+                if (scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - 50) {
+                    if (renderLimit < studentsFiltered.length) {
+                        renderLimit += 40;
+                        renderStudentList();
+                    }
+                }
+            };
+        }
+
+        // Class Filter Dropdown
+        classFilter?.addEventListener('change', (e) => {
+            selectedClassId = e.target.value;
+            applyStudentSearchFilter();
+        });
+
+        // Search Input changes
+        document.getElementById('pwStudentSearch')?.addEventListener('input', debounce(() => {
+            applyStudentSearchFilter();
+        }, 120));
+
+        // Enable student search if team selected
+        if (selectedTeamId) {
+            const searchInput = document.getElementById('pwStudentSearch');
+            if (searchInput) searchInput.disabled = false;
+            loadStudentsForSelection();
+            if (isGroupEvent) loadGroupsForTeam();
+        }
+
+        // Bulk Buttons Wiring
+        document.getElementById('pwSelectAllVisibleBtn')?.addEventListener('click', () => {
+            let added = 0;
+            const assignedGroupStudentIds = new Set();
+            if (isGroupEvent) {
+                for (const g of groups) {
+                    if (g.members) {
+                        for (const m of g.members) {
+                            if (m.studentId) assignedGroupStudentIds.add(m.studentId);
+                        }
+                    }
+                }
+            }
+            studentsFiltered.forEach(s => {
+                const isAssigned = savedIndividualStudentIds.has(s.id) || (isGroupEvent && assignedGroupStudentIds.has(s.id));
+                if (!isAssigned) {
+                    selectedStudentIds.add(s.id);
+                    added++;
+                }
+            });
+            refreshSelectedPreviews();
+            renderStudentList();
+            window.showToast(`Selected ${added} students.`, 'success');
+        });
+
+        document.getElementById('pwInvertSelectionBtn')?.addEventListener('click', () => {
+            const assignedGroupStudentIds = new Set();
+            if (isGroupEvent) {
+                for (const g of groups) {
+                    if (g.members) {
+                        for (const m of g.members) {
+                            if (m.studentId) assignedGroupStudentIds.add(m.studentId);
+                        }
+                    }
+                }
+            }
+            studentsFiltered.forEach(s => {
+                const isAssigned = savedIndividualStudentIds.has(s.id) || (isGroupEvent && assignedGroupStudentIds.has(s.id));
+                if (!isAssigned) {
+                    if (selectedStudentIds.has(s.id)) {
+                        selectedStudentIds.delete(s.id);
+                    } else {
+                        selectedStudentIds.add(s.id);
+                    }
+                }
+            });
+            refreshSelectedPreviews();
+            renderStudentList();
+        });
+
+        document.getElementById('pwClearSelectionBtn')?.addEventListener('click', () => {
+            selectedStudentIds.clear();
+            refreshSelectedPreviews();
+            renderStudentList();
+            window.showToast('Selection buffer cleared.', 'success');
+        });
+
+        // Group cloning copy member dropdown wire
+        document.getElementById('pwCopyGroupSelect')?.addEventListener('change', (e) => {
+            const val = e.target.value;
+            if (!val) return;
+
+            const [tId, gId] = val.split(':');
+            const group = allEventGroups.find(g => g.teamId === tId && g.id === gId);
+            if (!group) return;
+
+            selectedStudentIds.clear();
+            let copiedCount = 0;
+
+            group.members.forEach(m => {
+                const match = studentsAll.find(s => s.name.toLowerCase() === m.studentName.toLowerCase() || s.id === m.studentId);
+                if (match) {
+                    selectedStudentIds.add(match.id);
+                    copiedCount++;
+                }
+            });
+
+            refreshSelectedPreviews();
+            renderStudentList();
+            if (copiedCount > 0) {
+                window.showToast(`Copied ${copiedCount} members to current selection buffer.`, 'success');
+            } else {
+                window.showToast('No matching students found in this team.', 'warning');
+            }
+            e.target.value = '';
+        });
+
+        // Duplicate Last Group button wire
+        document.getElementById('pwDuplicatePrevGroupBtn')?.addEventListener('click', () => {
+            if (!groups || groups.length === 0) {
+                window.showToast('No existing groups in this team to duplicate.', 'error');
+                return;
+            }
+            const lastG = groups[groups.length - 1];
+            selectedStudentIds.clear();
+            let copiedCount = 0;
+
+            lastG.members.forEach(m => {
+                const match = studentsAll.find(s => s.name.toLowerCase() === m.studentName.toLowerCase() || s.id === m.studentId);
+                if (match) {
+                    selectedStudentIds.add(match.id);
+                    copiedCount++;
+                }
+            });
+
+            refreshSelectedPreviews();
+            renderStudentList();
+            window.showToast(`Duplicated members from "${lastG.name}" (${copiedCount} copied).`, 'success');
+        });
+
+        // Individual registration save
+        document.getElementById('pwSaveParticipantsBtn')?.addEventListener('click', async () => {
+            if (!selectedTeamId || !inheritedCategoryId) {
+                window.showToast('Please select a team.', 'error');
+                return;
+            }
+            if (selectedStudentIds.size === 0) {
+                window.showToast('Select at least one student first.', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('pwSaveParticipantsBtn');
+            const statusEl = document.getElementById('pwSaveStatus');
+            if (btn.disabled) return;
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+            if (statusEl) statusEl.textContent = 'Saving participant registrations...';
+
+            const targetTeamId = window.normalizeTeamId(selectedTeamId);
+
+            try {
+                const partRef = collection(db, "institutes", window.currentInstituteId, "programs", progId, "participants");
+                let existingSnap;
+                try {
+                    existingSnap = await getDocs(query(
+                        partRef,
+                        where('type', '==', 'individual'),
+                        where('teamId', '==', targetTeamId)
+                    ));
+                } catch (err) {
+                    existingSnap = await getDocs(partRef);
+                }
+                const existingStudentIds = new Set();
+                existingSnap.forEach(d => {
+                    const data = d.data();
+                    const matchesCategory = (pType === 'general') || ((data.categoryId || '') === inheritedCategoryId);
+                    if (data.type === 'individual' && window.normalizeTeamId(data.teamId) === targetTeamId && matchesCategory && data.studentId) {
+                        existingStudentIds.add(data.studentId);
+                    }
+                });
+
+                const toAdd = [...selectedStudentIds]
+                    .filter(id => !existingStudentIds.has(id))
+                    .map(id => studentsAll.find(s => s.id === id))
+                    .filter(Boolean);
+
+                const blockedStudents = [];
+                for (const s of toAdd) {
+                    const limitEligibility = checkStudentParticipationEligibility(
+                        s,
+                        progData,
+                        window.currentEventDetails?.participationLimits,
+                        registrationsProgramIdsMap,
+                        programsMap
+                    );
+                    if (!limitEligibility.eligible) {
+                        blockedStudents.push(`${s.name} — ${limitEligibility.label} ${limitEligibility.count}/${limitEligibility.limit}`);
+                    }
+                }
+
+                if (blockedStudents.length > 0) {
+                    const errorMsg = `Cannot save participants.\n\nParticipation limit reached:\n` + blockedStudents.join('\n');
+                    window.customAlert ? window.customAlert(errorMsg, "Limit Reached") : alert(errorMsg);
+
+                    if (statusEl) statusEl.textContent = 'Save cancelled. Limit reached.';
+                    btn.disabled = false;
+                    btn.textContent = '💾 Save Participants';
+                    return;
+                }
+
+                if (toAdd.length === 0) {
+                    window.showToast('All selected students are already assigned.', 'success');
+                    if (statusEl) statusEl.textContent = 'No new participants to save.';
+                    btn.disabled = false;
+                    btn.textContent = '💾 Save Participants';
+                    return;
+                }
+
+                const batch = writeBatch(db);
+                for (const s of toAdd) {
+                    const newDoc = doc(partRef, `individual_${safeDocId(selectedTeamId)}_${safeDocId(s.id)}`);
+                    batch.set(newDoc, {
+                        type: 'individual',
+                        studentId: s.id || '',
+                        studentName: s.name || '',
+                        chestNumber: s.chestNumber || '',
+                        gender: s.gender || '',
+                        teamId: targetTeamId,
+                        teamName: selectedTeamId === 'teamless' ? 'No Team' : (teamById.get(selectedTeamId)?.name || ''),
+                        categoryId: inheritedCategoryId || 'general_programs',
+                        categoryName: categoriesById.get(inheritedCategoryId)?.name || s.categoryName || 'General Programs',
+                        classId: s.classId || '',
+                        className: s.className || '',
+                        programId: progId || '',
+                        createdAt: serverTimestamp(),
+                        updatedAt: serverTimestamp()
+                    });
+                }
+                const progRef = doc(db, "institutes", window.currentInstituteId, "programs", progId);
+                batch.update(progRef, { participantCount: increment(toAdd.length) });
+                await batch.commit();
+                await updateDashboardMetadata(window.currentInstituteId);
+                invalidateProgramOverviewCache(window.currentInstituteId);
+                programParticipantsCache = null;
+                registrationsByTeamCache.clear();
+
+                toAdd.forEach(s => savedIndividualStudentIds.add(s.id));
+                window.showToast(`${toAdd.length} participant${toAdd.length === 1 ? '' : 's'} saved successfully!`, 'success');
+                if (statusEl) statusEl.textContent = `${toAdd.length} saved.`;
+                selectedStudentIds.clear();
+                await loadStudentsForSelection();
+            } catch (e) {
+                console.error(e);
+                window.showToast('Failed to save participants.', 'error');
+                if (statusEl) statusEl.textContent = 'Save failed.';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '💾 Save Participants';
+                refreshSelectedPreviews();
+            }
+        });
+
+        // Create New Group Action
+        document.getElementById('pwCreateGroupBtn')?.addEventListener('click', async () => {
+            const nameInput = document.getElementById('pwNewGroupName');
+            const groupName = (nameInput.value || '').trim();
+
+            if (!groupName) {
+                window.showToast('Group name is required.', 'error');
+                return;
+            }
+            if (!selectedTeamId || !inheritedCategoryId) {
+                window.showToast('Please select a team.', 'error');
+                return;
+            }
+            if (selectedStudentIds.size === 0) {
+                window.showToast('Select at least one student for the group.', 'error');
+                return;
+            }
+
+            const createBtn = document.getElementById('pwCreateGroupBtn');
+            createBtn.disabled = true;
+
+            try {
+                const groupId = uid('group');
+                const members = studentsAll
+                    .filter(s => selectedStudentIds.has(s.id))
+                    .map(s => ({
+                        studentId: s.id || '',
+                        studentName: s.name || ''
+                    }));
+
+                // Save-time group registration validation (Only for controlled General/Group Program rules)
+                const classification = classifyProgram(progData);
+                if (classification === 'general' || classification === 'group') {
+                    const blockedStudents = [];
+                    const selectedStudents = studentsAll.filter(s => selectedStudentIds.has(s.id));
+                    for (const s of selectedStudents) {
+                        const limitEligibility = checkStudentParticipationEligibility(
+                            s,
+                            progData,
+                            window.currentEventDetails?.participationLimits,
+                            registrationsProgramIdsMap,
+                            programsMap
+                        );
+                        if (!limitEligibility.eligible) {
+                            blockedStudents.push(`${s.name} — ${limitEligibility.label} ${limitEligibility.count}/${limitEligibility.limit}`);
+                        }
+                    }
+
+                    if (blockedStudents.length > 0) {
+                        const errorMsg = `Cannot save participants.\n\nParticipation limit reached:\n` + blockedStudents.join('\n');
+                        window.customAlert ? window.customAlert(errorMsg, "Limit Reached") : alert(errorMsg);
+                        createBtn.disabled = false;
+                        return;
+                    }
+                }
+
+                const containerDoc = await getOrCreateTeamParticipantContainer();
+                const docRef = containerDoc.ref;
+                const existingGroups = containerDoc.data.groups || [];
+
+                const newGroup = { id: groupId, name: groupName, members };
+                const updatedGroups = [...existingGroups, newGroup];
+
+                await setDoc(docRef, {
+                    teamId: window.normalizeTeamId(selectedTeamId),
+                    teamName: window.normalizeTeamId(selectedTeamId) === '' ? 'No Team' : (teamById.get(selectedTeamId)?.name || ''),
+                    categoryId: inheritedCategoryId || '',
+                    classId: selectedClassId || '',
+                    programId: progId || '',
+                    type: 'group',
+                    groups: updatedGroups,
+                    updatedAt: serverTimestamp()
+                }, { merge: true });
+
+                const progRef = doc(db, "institutes", window.currentInstituteId, "programs", progId);
+                await setDoc(progRef, { participantCount: increment(1) }, { merge: true });
+                await updateDashboardMetadata(window.currentInstituteId);
+                invalidateProgramOverviewCache(window.currentInstituteId);
+                programParticipantsCache = null;
+                registrationsByTeamCache.clear();
+
+                window.showToast('Group created successfully!', 'success');
+                nameInput.value = '';
+                selectedStudentIds.clear();
+                await loadGroupsForTeam();
+                refreshSelectedPreviews();
+            } catch (e) {
+                console.error(e);
+                window.showToast('Failed to create group.', 'error');
+            } finally {
+                createBtn.disabled = false;
+            }
+        });
+
+        updateProgramHeaderBadges();
+    }
+
+    function closeAllDropdowns() {
+        const activeMenus = document.querySelectorAll('.active-body-dropdown');
+        activeMenus.forEach(m => m.remove());
+    }
+
+    function renderAssignedManagement() {
+        const panel = document.getElementById('pwAssignedManagementPanel');
+        if (!panel) return;
+
+        if (!selectedTeamId || isGroupEvent) {
+            panel.style.display = 'none';
+            return;
+        }
+
+        panel.style.display = 'block';
+
+        let listHTML = '';
+        if (assignedParticipantsAll.length === 0) {
+            listHTML = `<div class="pw-empty" style="padding:2rem; text-align:center; color:var(--pw-slate-500); border: 1.5px dashed var(--pw-border); border-radius:var(--pw-radius-md); font-size:0.8rem;">No participants assigned.</div>`;
+        } else {
+            const tableRows = assignedParticipantsAll.map(p => `
+                <tr>
+                    <td>#${window.escapeHTML(p.chestNumber || '—')}</td>
+                    <td style="font-weight:700; color:var(--pw-slate-900);">${window.escapeHTML(p.studentName)}</td>
+                    <td>${window.escapeHTML(p.className)}</td>
+                    <td class="pw-part-actions-cell">
+                        <button class="btn-action-icon pw-part-delete-btn text-danger" data-id="${p.studentId}" title="Delete" style="display: inline-flex; align-items: center; gap: 0.25rem; background: #fef2f2; border: 1.5px solid #fee2e2; padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.72rem; font-weight: 700; color: #EF4444; cursor: pointer; transition: all 0.2s ease;">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width:0.8rem; height:0.8rem; color:#EF4444;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.34 9m-4.78 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.100 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                            </svg>
+                            <span>Delete</span>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+
+            listHTML = `
+                <div class="pw-table-container">
+                    <table class="pw-table">
+                        <thead>
+                            <tr>
+                                <th>Chest No</th>
+                                <th>Student Name</th>
+                                <th>Class</th>
+                                <th style="width: 50px;">Delete</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        panel.innerHTML = `
+            <div class="pw-assigned-list">
+                ${listHTML}
+            </div>
+        `;
+
+        panel.querySelectorAll('.pw-part-delete-btn').forEach(btn => {
+            btn.onclick = async (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-id');
+                await deleteParticipant(id);
+            };
+        });
+
+        updateProgramHeaderBadges();
+    }
+
+    async function deleteParticipant(id) {
+        const student = assignedParticipantsAll.find(x => x.studentId === id);
+        if (!student) return;
+        const confirmed = await window.customConfirm(`Are you sure you want to delete ${student.studentName}?`);
+        if (!confirmed) return;
+
+        const spinner = document.getElementById('pwStudentsSkeleton');
+        if (spinner) spinner.style.display = 'block';
+
+        try {
+            const instId = window.currentInstituteId;
+            const partRef = collection(db, "institutes", instId, "programs", progId, "participants");
+            let docId = participantDocIds.get(id) || `individual_${safeDocId(selectedTeamId)}_${safeDocId(id)}`;
+            const docRef = doc(partRef, docId);
+
+            const batch = writeBatch(db);
+            batch.delete(docRef);
+
+            // Clean result document for this program
+            const resultsSnap = await getDocs(query(
+                collection(db, "institutes", instId, "results"),
+                where("programId", "==", progId)
+            ));
+            resultsSnap.forEach(resDoc => {
+                const resData = resDoc.data();
+                if (Array.isArray(resData.marksData)) {
+                    const cleanMarks = resData.marksData.filter(m => m.studentId !== id);
+                    if (cleanMarks.length === 0) {
+                        batch.delete(resDoc.ref);
+                    } else if (cleanMarks.length !== resData.marksData.length) {
+                        batch.update(resDoc.ref, { marksData: cleanMarks, participantCount: cleanMarks.length, updatedAt: serverTimestamp() });
+                    }
+                }
+            });
+
+            await batch.commit();
+
+            await migrateParticipantCounts(instId);
+            await updateDashboardMetadata(instId);
+            programParticipantsCache = null;
+            registrationsByTeamCache.clear();
+
+            savedIndividualStudentIds.delete(id);
+            selectedStudentIds.delete(id);
+
+            window.showToast("Participant deleted successfully!", "success");
+            await loadStudentsForSelection();
+        } catch (e) {
+            console.error("Delete failure:", e);
+            window.showToast("Failed to delete participant.", "error");
+        } finally {
+            if (spinner) spinner.style.display = 'none';
+        }
+    }
+
+
+    const handleScroll = () => {
+        closeAllDropdowns();
+    };
+
+    const handleClick = (e) => {
+        if (!e.target.closest('.pw-part-delete-btn') && !e.target.closest('.active-body-dropdown')) {
+            closeAllDropdowns();
+        }
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+            closeAllDropdowns();
+        }
+    };
+
+    window.addEventListener('scroll', handleScroll, true);
+    document.addEventListener('click', handleClick);
+    document.addEventListener('keydown', handleKeyDown);
+
+    window.currentViewCleanup = () => {
+        window.removeEventListener('scroll', handleScroll, true);
+        document.removeEventListener('click', handleClick);
+        document.removeEventListener('keydown', handleKeyDown);
+    };
+
+    await initialize();
+}

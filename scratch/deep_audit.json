@@ -1,0 +1,105 @@
+{
+  "globals": [
+    "let allPrograms = [];",
+    "let allCategories = [];",
+    "let allTeams = [];",
+    "let allAwardTypes = [];",
+    "let unsubscribeExports = null;",
+    "let exportsList = [];",
+    "let searchVal = '';",
+    "let filterTypeVal = '';",
+    "let filterStatusVal = '';",
+    "let sortByVal = 'newest';",
+    "let teamBackgroundsCache = {};",
+    "let isTeamBgEnabled = false;",
+    "const configSnap = await getDoc(doc(db, \"institutes\", window.currentInstituteId, \"metadata\", \"eventConfig\"));",
+    "const evName = window.currentEventDetails?.eventName?.trim();"
+  ],
+  "listeners_count": 39,
+  "firestore_queries_count": 20,
+  "export_types": [],
+  "sample_listeners": [
+    {
+      "line": 175,
+      "code": "btnChoose.onclick = () => fileInput.click();"
+    },
+    {
+      "line": 176,
+      "code": "btnReplace.onclick = () => fileInput.click();"
+    },
+    {
+      "line": 178,
+      "code": "btnRemove.onclick = () => {"
+    },
+    {
+      "line": 187,
+      "code": "fileInput.onchange = async (e) => {"
+    },
+    {
+      "line": 691,
+      "code": "document.getElementById(\"newExportBtn\").onclick = openExportDrawer;"
+    },
+    {
+      "line": 692,
+      "code": "document.getElementById(\"syncCachesBtn\").onclick = async () => {"
+    },
+    {
+      "line": 704,
+      "code": "sInput.oninput = (e) => {"
+    },
+    {
+      "line": 711,
+      "code": "fType.onchange = (e) => {"
+    },
+    {
+      "line": 718,
+      "code": "fStatus.onchange = (e) => {"
+    },
+    {
+      "line": 725,
+      "code": "sSort.onchange = (e) => {"
+    }
+  ],
+  "sample_queries": [
+    {
+      "line": 38,
+      "code": "const configSnap = await getDoc(doc(db, \"institutes\", window.currentInstituteId, \"metadata\", \"eventC"
+    },
+    {
+      "line": 745,
+      "code": "const querySnap = await getDocs(collection(db, \"institutes\", instId, \"exports\"));"
+    },
+    {
+      "line": 748,
+      "code": "deleteDoc(doc(db, \"institutes\", instId, \"exports\", docSnap.id))"
+    },
+    {
+      "line": 836,
+      "code": "const ref = query("
+    },
+    {
+      "line": 838,
+      "code": "orderBy(\"queuedAt\", \"desc\"),"
+    },
+    {
+      "line": 839,
+      "code": "limit(60)"
+    },
+    {
+      "line": 842,
+      "code": "unsubscribeExports = onSnapshot(ref, (snapshot) => {"
+    },
+    {
+      "line": 1305,
+      "code": "const configSnap = await getDoc(doc(db, \"institutes\", instId, \"metadata\", \"awardTypesConfig\"));"
+    },
+    {
+      "line": 2376,
+      "code": "const docRef = await addDoc(ref, payload);"
+    },
+    {
+      "line": 2400,
+      "code": "await updateDoc(docRef, { status: 'Processing' });"
+    }
+  ]
+}

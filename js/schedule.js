@@ -1,0 +1,2885 @@
+import { db, getCachedCategories } from './firebase.js';
+import {
+    collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc,
+    writeBatch, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+
+// ─────────────────────────────────────────────
+// Module State & Real-time Subscriptions
+// ─────────────────────────────────────────────
+let unsubPrograms = null;
+let unsubSchedules = null;
+let unsubStages = null;
+
+let localPrograms = [];
+let localSchedules = [];
+let localStages = [];
+let localCategories = [];
+let mergedSchedules = [];
+
+let activeStage = '';
+let selectedScheduleIds = new Set();
+
+// Per-stage configuration cache (stored in memory / synced)
+let stageConfigs = {}; // { stageName: { date: '2026-08-15', startTime: '09:00', defaultDuration: 20 } }
+
+// ─────────────────────────────────────────────
+// CSS Injection for Minimalist Table Workflow
+// ─────────────────────────────────────────────
+function injectTableScheduleStyles() {
+    if (document.getElementById('sched-table-styles')) return;
+
+    const style = document.createElement('style');
+    style.id = 'sched-table-styles';
+    style.innerHTML = `
+        /* Stage Tabs Bar */
+        .sched-tabs-container {
+            display: flex;
+            gap: 0.5rem;
+            overflow-x: auto;
+            padding-top: 0.5rem;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.25rem;
+            border-bottom: 2px solid #D8E8DE;
+            width: 100%;
+            box-sizing: border-box;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none; /* Hide scrollbar for Firefox */
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg-main, #F5FAF7);
+        }
+        .sched-tabs-container::-webkit-scrollbar {
+            display: none; /* Hide scrollbar for Chrome/Safari/Opera */
+        }
+        .sched-tab-wrapper {
+            display: inline-flex;
+            align-items: center;
+            flex-shrink: 0;
+            position: relative;
+        }
+        .sched-tab-btn {
+            background: #F5FAF7;
+            border: 1px solid #D8E8DE;
+            color: #64756A;
+            padding: 0.5rem 1rem;
+            border-radius: 12px 12px 0 0;
+            font-size: 0.875rem;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            min-height: 44px;
+            box-sizing: border-box;
+            flex-shrink: 0;
+        }
+        .sched-tab-btn:hover {
+            background: #ECFDF5;
+            color: #17251B;
+        }
+        .sched-tab-btn.active {
+            background: #ffffff;
+            border-color: #064E3B;
+            border-bottom: 3px solid #064E3B;
+            color: #064E3B;
+            box-shadow: 0 -2px 6px rgba(0,0,0,0.03);
+        }
+        .sched-tab-menu-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            margin-left: 6px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #64756A;
+            transition: all 0.2s ease;
+        }
+        .sched-tab-menu-btn:hover {
+            background: rgba(0, 0, 0, 0.08);
+            color: #17251B;
+        }
+        
+        /* Modern contextual action menu */
+        .sched-tab-dropdown-menu {
+            display: none;
+            position: fixed;
+            background: #ffffff;
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(23, 37, 27, 0.15), 0 8px 10px -6px rgba(23, 37, 27, 0.15);
+            z-index: 10000;
+            min-width: 150px;
+            padding: 0.35rem;
+            opacity: 0;
+            transform: scale(0.95);
+            transition: opacity 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+        .sched-tab-dropdown-menu.show {
+            opacity: 1;
+            transform: scale(1);
+            pointer-events: auto;
+        }
+        .sched-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            color: #64756A;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: background 0.15s, color 0.15s;
+        }
+        .sched-dropdown-item:hover {
+            background: #ECFDF5;
+            color: #17251B;
+        }
+        .sched-dropdown-item.text-danger {
+            color: #EF4444;
+        }
+        .sched-dropdown-item.text-danger:hover {
+            background: #fee2e2;
+            color: #EF4444;
+        }
+
+        /* Top Stage Setup Bar & Config Bar Responsive Design */
+        .sched-config-bar {
+            background: #ffffff;
+            border: 1px solid #D8E8DE;
+            border-radius: 14px;
+            padding: 1.25rem;
+            margin-bottom: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            width: 100%;
+            box-sizing: border-box;
+        }
+        @media (min-width: 992px) {
+            .sched-config-bar {
+                flex-direction: row;
+                align-items: center;
+                justify-content: space-between;
+            }
+        }
+        .sched-config-inputs {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+            width: 100%;
+            align-items: center;
+        }
+        /* Mobile: One field per row, full width */
+        @media (max-width: 576px) {
+            .sched-config-inputs {
+                grid-template-columns: 1fr;
+            }
+            .sched-config-group {
+                flex-direction: column;
+                align-items: flex-start;
+                width: 100%;
+            }
+            .sched-config-group label {
+                margin-bottom: 0.25rem;
+            }
+            .sched-config-group .sched-tbl-input {
+                width: 100% !important;
+            }
+            .sched-config-bar .btn {
+                width: 100%;
+            }
+        }
+        /* Tablet: 2 rows. title and 3 fields */
+        @media (min-width: 577px) and (max-width: 991px) {
+            .sched-config-inputs {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .sched-config-title {
+                grid-column: span 2;
+            }
+            .sched-config-group {
+                width: 100%;
+            }
+            .sched-config-group .sched-tbl-input {
+                width: 100% !important;
+            }
+        }
+        /* Desktop: same row */
+        @media (min-width: 992px) {
+            .sched-config-inputs {
+                display: flex;
+                flex-direction: row;
+                width: auto;
+                flex-wrap: nowrap;
+            }
+            .sched-config-group {
+                width: auto;
+            }
+            .sched-config-group .sched-tbl-input {
+                width: auto !important;
+            }
+        }
+        .sched-config-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #64756A;
+        }
+
+        /* Custom Searchable Dropdown */
+        .custom-select-container {
+            position: relative;
+            width: 100%;
+        }
+        .custom-select-trigger {
+            width: 100%;
+            padding: 0.65rem 1rem;
+            background: #ffffff;
+            border: 1px solid #D8E8DE;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #17251B;
+            text-align: left;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            min-height: 44px;
+        }
+        .custom-select-trigger:focus,
+        .custom-select-container.open .custom-select-trigger {
+            border-color: #064E3B;
+            box-shadow: 0 0 0 2px rgba(67, 56, 202, 0.1);
+        }
+        .custom-select-trigger-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding-right: 1rem;
+        }
+        .custom-select-trigger-arrow {
+            font-size: 0.75rem;
+            color: #64756A;
+            transition: transform 0.2s;
+        }
+        .custom-select-container.open .custom-select-trigger-arrow {
+            transform: rotate(180deg);
+        }
+        .custom-select-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            width: 100%;
+            margin-top: 4px;
+            background: #ffffff;
+            border: 1px solid #D8E8DE;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(23, 37, 27, 0.1), 0 8px 10px -6px rgba(23, 37, 27, 0.1);
+            z-index: 10005;
+            overflow: hidden;
+            opacity: 0;
+            transform: scale(0.95);
+            transform-origin: top center;
+            transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1), transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+        .custom-select-container.open .custom-select-dropdown {
+            display: block;
+            opacity: 1;
+            transform: scale(1);
+            pointer-events: auto;
+        }
+        .custom-select-search-wrapper {
+            padding: 8px;
+            background: #F5FAF7;
+            border-bottom: 1px solid #D8E8DE;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .custom-select-search-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #D8E8DE;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            outline: none;
+            box-sizing: border-box;
+        }
+        .custom-select-search-input:focus {
+            border-color: #064E3B;
+            box-shadow: 0 0 0 2px rgba(67, 56, 202, 0.1);
+        }
+        .custom-select-options-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            max-height: 250px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .custom-select-option {
+            padding: 10px 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #64756A;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            display: flex;
+            align-items: center;
+            min-height: 44px;
+            box-sizing: border-box;
+        }
+        .custom-select-option:hover,
+        .custom-select-option.highlighted {
+            background: #ECFDF5;
+            color: #17251B;
+        }
+        .custom-select-option.selected {
+            background: #e0e7ff;
+            color: #3730a3;
+        }
+        .custom-select-no-results {
+            padding: 15px;
+            text-align: center;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #64756A;
+        }
+        .sched-cat-badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            font-size: 0.7rem;
+            font-weight: 800;
+            border-radius: 6px;
+            background: #ECFDF5;
+            color: #64756A;
+            border: 1px solid #D8E8DE;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+            box-sizing: border-box;
+        }
+
+        /* Add Program Redesigned Modal Responsive Container & Cards */
+        .modal-container.add-program-modal-container {
+            max-width: 960px !important;
+            width: 95% !important;
+            padding: 1.25rem !important;
+        }
+        .add-prog-card:hover {
+            border-color: #064E3B !important;
+            box-shadow: 0 4px 12px rgba(67, 56, 202, 0.12) !important;
+        }
+        @media (max-width: 768px) {
+            .add-prog-filter-bar {
+                grid-template-columns: repeat(2, 1fr) !important;
+            }
+        }
+        @media (max-width: 576px) {
+            .add-prog-filter-bar {
+                grid-template-columns: 1fr !important;
+            }
+            #programCardsGrid {
+                grid-template-columns: 1fr !important;
+            }
+        }
+
+        /* Compact Table Styles */
+        .sched-table-wrapper {
+            background: #ffffff;
+            border: 1px solid #D8E8DE;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .table-responsive {
+            display: block;
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .sched-compact-table {
+            min-width: 900px;
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+            text-align: left;
+        }
+        .sched-compact-table th {
+            background: #F5FAF7;
+            color: #64756A;
+            font-weight: 800;
+            padding: 0.75rem 0.85rem;
+            border-bottom: 2px solid #D8E8DE;
+            text-transform: uppercase;
+            font-size: 0.72rem;
+            letter-spacing: 0.05em;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .sched-compact-table td {
+            padding: 0.6rem 0.85rem;
+            border-bottom: 1px solid #D8E8DE;
+            vertical-align: middle;
+            color: #17251B;
+        }
+        .sched-table-row {
+            transition: background 0.15s;
+        }
+        .sched-table-row:hover {
+            background: #F5FAF7;
+        }
+        .sched-table-row.dragging {
+            opacity: 0.4;
+            background: #ECFDF5;
+        }
+        .sched-table-row.is-locked {
+            background: #fffbeb;
+        }
+
+        /* Table Inputs */
+        .sched-tbl-input {
+            width: 100%;
+            padding: 0.4rem 0.6rem;
+            border: 1px solid #D8E8DE;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-family: inherit;
+            font-weight: 600;
+            color: #17251B;
+            background: #ffffff;
+            outline: none;
+        }
+        .sched-tbl-input:focus {
+            border-color: #064E3B;
+            box-shadow: 0 0 0 2px rgba(67, 56, 202, 0.1);
+        }
+        .sched-tbl-select {
+            padding: 0.4rem 0.6rem;
+            border: 1px solid #D8E8DE;
+            border-radius: 8px;
+            font-size: 0.825rem;
+            font-weight: 700;
+            outline: none;
+            cursor: pointer;
+            background: #ffffff;
+        }
+
+        /* Action Buttons */
+        .sched-row-actions {
+            display: inline-flex;
+            gap: 0.4rem;
+            align-items: center;
+        }
+        .btn-tbl-act {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            padding: 0.5rem 0.6rem;
+            border-radius: 8px;
+            font-size: 1.05rem;
+            color: #64756A;
+            transition: all 0.15s;
+            min-width: 44px;
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+        }
+        .btn-tbl-act:hover {
+            background: #D8E8DE;
+            color: #17251B;
+        }
+
+        /* Bulk Bar */
+        .sched-bulk-bar {
+            background: #e0e7ff;
+            border: 1px solid #ECFDF5;
+            color: #3730a3;
+            border-radius: 12px;
+            padding: 0.75rem 1.25rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .sched-topbar-actions {
+            display: inline-flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-wrap: nowrap;
+        }
+        @media (max-width: 576px) {
+            .sched-topbar-actions {
+                display: grid !important;
+                grid-template-columns: 1.35fr 1fr 1fr !important;
+                width: 100% !important;
+                gap: 0.35rem !important;
+                align-items: center !important;
+            }
+            .sched-topbar-actions .btn {
+                width: 100% !important;
+                padding: 0.45rem 0.35rem !important;
+                font-size: 0.76rem !important;
+                font-weight: 700 !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                text-align: center !important;
+                box-sizing: border-box !important;
+                min-height: 38px !important;
+                height: 38px !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+            }
+            .sched-tabs-container {
+                position: static !important;
+                top: auto !important;
+            }
+        }
+        @media (max-width: 768px) {
+            .topbar {
+                flex-wrap: wrap !important;
+                height: auto !important;
+                padding: 0.75rem 1rem !important;
+                gap: 0.5rem;
+            }
+            .topbar-actions {
+                width: 100% !important;
+                margin-top: 0.15rem;
+            }
+            .sched-tabs-container {
+                position: static !important;
+                top: auto !important;
+            }
+        }
+
+        /* Dense Compact Single-Line Table Styling */
+        .sched-compact-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .sched-compact-table th {
+            padding: 0.45rem 0.6rem !important;
+            font-size: 0.75rem !important;
+            font-weight: 800 !important;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            background: #F5FAF7;
+            color: #64756A;
+            border-bottom: 2px solid #D8E8DE;
+            white-space: nowrap !important;
+        }
+        .sched-compact-table td {
+            padding: 0.35rem 0.6rem !important;
+            font-size: 0.85rem !important;
+            border-bottom: 1px solid #ECFDF5;
+            vertical-align: middle !important;
+            white-space: nowrap !important;
+        }
+        .sched-table-row {
+            height: 40px !important;
+        }
+
+        @media print {
+            body * { visibility: hidden !important; }
+            #printableStageTable, #printableStageTable * { visibility: visible !important; }
+            #printableStageTable { position: absolute; left: 0; top: 0; width: 100% !important; margin: 0 !important; padding: 0 !important; border: none !important; box-shadow: none !important; }
+            .sched-tabs-container, .sched-config-bar, .topbar, .sidebar, .bottom-nav, .sched-bulk-bar, .modal-overlay, #settingsWarningModal, #schedTableFooter { display: none !important; }
+            
+            /* Hide non-printable table columns (Checkbox, Same Time/Group, Status, Actions) */
+            .sched-compact-table th:nth-child(1), .sched-compact-table td:nth-child(1) { display: none !important; }
+            .sched-compact-table th:nth-child(5), .sched-compact-table td:nth-child(5) { display: none !important; }
+            .sched-compact-table th:nth-child(9), .sched-compact-table td:nth-child(9) { display: none !important; }
+            .sched-compact-table th:nth-child(10), .sched-compact-table td:nth-child(10) { display: none !important; }
+            .sched-lock-btn, .btn-tbl-act, .sched-row-actions { display: none !important; }
+            
+            /* Clean form elements formatting for print */
+            .sched-tbl-input, .sched-tbl-select { border: none !important; background: transparent !important; appearance: none !important; font-weight: bold !important; padding: 0 !important; text-align: center; }
+            .sched-compact-table { border: 2px solid #17251B !important; width: 100% !important; }
+            .sched-compact-table th, .sched-compact-table td { border: 1px solid #64756A !important; color: #000 !important; }
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// ─────────────────────────────────────────────
+// Init View
+// ─────────────────────────────────────────────
+export async function initScheduleView(container, topActions) {
+    if (!window.currentInstituteId) {
+        container.innerHTML = '<div class="empty-state"><h3>Access Denied</h3><p>Please log in again.</p></div>';
+        return;
+    }
+
+    injectTableScheduleStyles();
+
+    if (unsubPrograms) unsubPrograms();
+    if (unsubSchedules) unsubSchedules();
+    if (unsubStages) unsubStages();
+    selectedScheduleIds.clear();
+
+    window.currentViewCleanup = () => {
+        if (unsubPrograms) { unsubPrograms(); unsubPrograms = null; }
+        if (unsubSchedules) { unsubSchedules(); unsubSchedules = null; }
+        if (unsubStages) { unsubStages(); unsubStages = null; }
+        const dropdown = document.getElementById('schedTabDropdown');
+        if (dropdown) {
+            dropdown.remove();
+        }
+    };
+
+    // Render Top Actions specifically for currently active Stage inside a responsive wrapper
+    topActions.innerHTML = `
+        <div class="sched-topbar-actions">
+            <button class="btn btn-primary" id="btnCreateStageTop" style="font-weight:700;">
+                🎪 + Create Stage
+            </button>
+            <button class="btn btn-secondary" id="btnPrintStage" style="font-weight:700;">
+                🖨️ Print 
+            </button>
+          
+            <button class="btn btn-secondary" id="btnShareStage" style="font-weight:700;">
+                💬 Share
+            </button>
+        </div>
+    `;
+
+    container.innerHTML = `
+        <div style="display:flex; flex-direction:column; width:100%; box-sizing:border-box;">
+            <!-- Stage Navigation Tabs -->
+            <div class="sched-tabs-container" id="schedTabsBar">
+                <!-- Injected dynamically -->
+            </div>
+
+            <!-- Top Stage Config & Action Bar -->
+            <div class="sched-config-bar" id="schedConfigBar">
+                <!-- Injected dynamically -->
+            </div>
+
+            <!-- Bulk Actions Bar -->
+            <div class="sched-bulk-bar hidden" id="schedBulkBar">
+                <div style="display:flex; align-items:center; gap:0.75rem;">
+                    <input type="checkbox" id="chkSelectAllRows" style="width:1.2rem; height:1.2rem; cursor:pointer;">
+                    <span style="font-weight:800; font-size:0.875rem;" id="lblSelectedCount">0 Selected</span>
+                </div>
+                <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                    <button class="btn btn-secondary btn-sm" id="btnBulkDuration">⏳ Duration</button>
+                    <button class="btn btn-secondary btn-sm" id="btnBulkStatus">🚦 Status</button>
+                    <button class="btn btn-secondary btn-sm" id="btnBulkMove">🎪 Move Stage</button>
+                    <button class="btn btn-secondary btn-sm text-danger" id="btnBulkDelete">🗑️ Delete</button>
+                </div>
+            </div>
+
+            <!-- Printable Main Table Wrapper -->
+            <div class="sched-table-wrapper" id="printableStageTable">
+                <div class="table-responsive">
+                    <table class="sched-compact-table" style="background:#ffffff; border-radius:12px; overflow:hidden; border:1px solid #D8E8DE; box-shadow:0 1px 3px rgba(0,0,0,0.02); width:100%;">
+                        <thead>
+                            <tr style="background:#F5FAF7; border-bottom:1px solid #D8E8DE;">
+                                <th style="width:36px; text-align:center; padding:0.65rem 0.5rem;"><input type="checkbox" id="chkHeaderAll" style="cursor:pointer; width:15px; height:15px;"></th>
+                                <th style="width:55px; text-align:center; padding:0.65rem 0.5rem; font-size:0.75rem; font-weight:800; color:#64756A; letter-spacing:0.04em;">ORDER</th>
+                                <th style="text-align:left; padding:0.65rem 0.75rem; font-size:0.75rem; font-weight:800; color:#64756A; letter-spacing:0.04em;">PROGRAM NAME</th>
+                                <th style="width:110px; text-align:center; padding:0.65rem 0.5rem; font-size:0.75rem; font-weight:800; color:#64756A; letter-spacing:0.04em;">CATEGORY</th>
+                                <th style="width:125px; text-align:center; padding:0.65rem 0.5rem; font-size:0.75rem; font-weight:800; color:#64756A; letter-spacing:0.04em;">DATE</th>
+                                <th style="width:100px; text-align:center; padding:0.65rem 0.5rem; font-size:0.75rem; font-weight:800; color:#64756A; letter-spacing:0.04em;">START TIME</th>
+                                <th style="width:100px; text-align:center; padding:0.65rem 0.5rem; font-size:0.75rem; font-weight:800; color:#64756A; letter-spacing:0.04em;">END TIME</th>
+                                <th style="width:110px; text-align:center; padding:0.65rem 0.5rem; font-size:0.75rem; font-weight:800; color:#64756A; letter-spacing:0.04em;">STATUS</th>
+                                <th style="width:80px; text-align:center; padding:0.65rem 0.5rem; font-size:0.75rem; font-weight:800; color:#64756A; letter-spacing:0.04em;">ACTIONS</th>
+                            </tr>
+                        </thead>
+                        <tbody id="schedTableBody">
+                            <tr><td colspan="9" style="text-align:center; padding:2rem; color:#64756A;">Loading Stage Schedule...</td></tr>
+                        </tbody>
+                    </table>
+                    <div id="schedTableFooter" style="display:flex; justify-content:space-between; align-items:center; padding:0.75rem 1rem; border-top:1px solid #D8E8DE; font-size:0.8rem; font-weight:600; color:#64756A; background:#ffffff; border-radius:0 0 12px 12px; margin-top: -1px;">
+                        <span id="schedFooterCount">Total Programs: 0</span>
+                        <span>Note: Next program starts after the longest parallel group finishes.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    bindHeaderEvents();
+    startRealtimeListeners();
+}
+
+// ─────────────────────────────────────────────
+// Header & Global Triggers
+// ─────────────────────────────────────────────
+function bindHeaderEvents() {
+    document.getElementById('btnCreateStageTop')?.addEventListener('click', openCreateStageModal);
+    document.getElementById('btnPrintStage')?.addEventListener('click', openPrintSelectionModal);
+    document.getElementById('btnPDFStage')?.addEventListener('click', openPrintSelectionModal);
+    document.getElementById('btnShareStage')?.addEventListener('click', shareActiveStageWhatsApp);
+
+    // Bulk header trigger
+    document.getElementById('chkHeaderAll')?.addEventListener('change', (e) => {
+        const checked = e.target.checked;
+        const chks = document.querySelectorAll('.sched-row-chk');
+        chks.forEach(c => {
+            c.checked = checked;
+            const id = c.dataset.id;
+            if (checked) selectedScheduleIds.add(id);
+            else selectedScheduleIds.delete(id);
+        });
+        updateBulkBar();
+    });
+
+    document.getElementById('btnBulkDuration')?.addEventListener('click', executeBulkDuration);
+    document.getElementById('btnBulkStatus')?.addEventListener('click', executeBulkStatus);
+    document.getElementById('btnBulkMove')?.addEventListener('click', executeBulkMove);
+    document.getElementById('btnBulkDelete')?.addEventListener('click', executeBulkDelete);
+}
+
+function updateBulkBar() {
+    const bar = document.getElementById('schedBulkBar');
+    const lbl = document.getElementById('lblSelectedCount');
+    if (!bar || !lbl) return;
+
+    if (selectedScheduleIds.size > 0) {
+        bar.classList.remove('hidden');
+        lbl.textContent = `${selectedScheduleIds.size} Selected`;
+    } else {
+        bar.classList.add('hidden');
+        const hChk = document.getElementById('chkHeaderAll');
+        if (hChk) hChk.checked = false;
+    }
+}
+
+// ─────────────────────────────────────────────
+// Real-Time Listeners & Data Cascade Engine
+// ─────────────────────────────────────────────
+function startRealtimeListeners() {
+    const instId = window.currentInstituteId;
+
+    // Fetch categories cache
+    getCachedCategories(instId).then(cats => {
+        localCategories = cats || [];
+        mergeAndRender();
+    }).catch(err => {
+        console.error("Error loading categories:", err);
+    });
+
+    // 1. Listen to Published Programs
+    unsubPrograms = onSnapshot(collection(db, "institutes", instId, "programs"), (snap) => {
+        localPrograms = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        mergeAndRender();
+    });
+
+    // 2. Listen to Schedule documents
+    unsubSchedules = onSnapshot(collection(db, "institutes", instId, "schedules"), (snap) => {
+        localSchedules = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        mergeAndRender();
+    });
+
+    // 3. Listen to Stages collection dynamically from database!
+    unsubStages = onSnapshot(collection(db, "institutes", instId, "stages"), (snap) => {
+        localStages = snap.docs.map(d => {
+            const data = d.data();
+            return {
+                id: d.id,
+                name: data.name || data.stageName || d.id,
+                status: data.status || 'active',
+                order: data.order !== undefined ? data.order : (data.runningOrder !== undefined ? data.runningOrder : 99),
+                ...data
+            };
+        }).filter(s => s.status === 'active' || s.status !== 'inactive');
+
+        // Sort dynamically by order, then name
+        localStages.sort((a, b) => {
+            if (a.order !== b.order) return a.order - b.order;
+            return a.name.localeCompare(b.name);
+        });
+
+        mergeAndRender();
+    }, (err) => {
+        console.error("Stages snapshot listener error:", err);
+    });
+}
+
+function resolveCategoryName(prog) {
+    if (!prog) return 'Uncategorized';
+    if (prog.categoryName) return prog.categoryName;
+    if (prog.category) return prog.category;
+    if (prog.categoryId) {
+        const cat = localCategories.find(c => c.id === prog.categoryId || c.name === prog.categoryId);
+        if (cat) return cat.name;
+        return prog.categoryId === 'general_programs' ? 'General' : prog.categoryId;
+    }
+    return 'Uncategorized';
+}
+
+function getBreakIcon(title = '') {
+    const t = String(title).toLowerCase();
+    if (t.includes('tea')) return '☕';
+    if (t.includes('lunch') || t.includes('food') || t.includes('meal')) return '🍽️';
+    if (t.includes('prayer') || t.includes('salah') || t.includes('namaz')) return '🕌';
+    if (t.includes('setup') || t.includes('stage')) return '🎪';
+    if (t.includes('judge') || t.includes('meeting')) return '⚖️';
+    if (t.includes('prize') || t.includes('award') || t.includes('ceremony')) return '🏆';
+    return '⏰';
+}
+
+function mergeAndRender() {
+    // Map programs and schedule documents
+    mergedSchedules = localSchedules.map(sched => {
+        const isBreak = !!sched.isBreak || sched.type === 'break' || (!sched.programId && !!sched.programName);
+        const prog = isBreak ? {} : (localPrograms.find(p => p.id === sched.programId || p.id === sched.id) || {});
+        const catName = isBreak ? 'Break' : resolveCategoryName(prog);
+        return {
+            id: sched.id,
+            isBreak: isBreak,
+            breakTitle: sched.breakTitle || sched.programName || 'Break',
+            programId: sched.programId || prog.id || '',
+            programName: isBreak ? (sched.breakTitle || sched.programName || 'Break') : (sched.programName || prog.programName || 'Unnamed Program'),
+            programNumber: isBreak ? '' : (prog.programNumber || sched.programNumber || ''),
+            programType: isBreak ? 'Break' : (prog.programType || sched.programType || ''),
+            categoryName: catName,
+            stage: sched.stage || prog.programLocation || prog.location || '',
+            scheduleDate: sched.scheduleDate || prog.scheduleDate || stageConfigs[sched.stage]?.date || '',
+            startTime: sched.startTime || prog.startTime || '',
+            endTime: sched.endTime || prog.endTime || '',
+            duration: parseInt(sched.duration, 10) || (sched.startTime && sched.endTime ? Math.max(0, timeToMinutes(sched.endTime) - timeToMinutes(sched.startTime)) : 0) || 20,
+            runningOrder: parseInt(sched.runningOrder, 10) || 1,
+            status: sched.status || 'Pending',
+            isLocked: !!sched.isLocked,
+            isOffStage: !!sched.isOffStage,
+            isParallel: !!sched.isParallel,
+            parallelGroupId: sched.parallelGroupId || null
+        };
+    });
+
+    // Merge programs from localPrograms assigned to a stage/location but not yet in localSchedules
+    localPrograms.forEach(prog => {
+        const alreadyMerged = mergedSchedules.some(s => s.id === prog.id || s.programId === prog.id);
+        if (!alreadyMerged && (prog.programLocation || prog.location || prog.scheduleDate)) {
+            const catName = resolveCategoryName(prog);
+            mergedSchedules.push({
+                id: prog.id,
+                isBreak: false,
+                breakTitle: '',
+                programId: prog.id,
+                programName: prog.programName || 'Unnamed Program',
+                programNumber: prog.programNumber || '',
+                programType: prog.programType || '',
+                categoryName: catName,
+                stage: prog.programLocation || prog.location || 'Stage',
+                scheduleDate: prog.scheduleDate || '',
+                startTime: prog.startTime || '',
+                endTime: prog.endTime || '',
+                duration: 20,
+                runningOrder: 99,
+                status: 'Pending',
+                isLocked: false,
+                isOffStage: (prog.programLocation || prog.location) === 'Off Stage',
+                isParallel: false,
+                parallelGroupId: null
+            });
+        }
+    });
+
+    // Populate stageConfigs dynamically from localStages doc data to persist stage config
+    localStages.forEach(stObj => {
+        if (stObj.name) {
+            stageConfigs[stObj.name] = {
+                date: stObj.date || stObj.scheduleDate || stageConfigs[stObj.name]?.date || new Date().toISOString().split('T')[0],
+                startTime: stObj.startTime || stageConfigs[stObj.name]?.startTime || '09:00',
+                defaultDuration: parseInt(stObj.defaultDuration || stObj.duration, 10) || stageConfigs[stObj.name]?.defaultDuration || 20,
+                color: stObj.color || '',
+                icon: stObj.icon || ''
+            };
+        }
+    });
+
+    renderStageTabs();
+    if (localStages.length > 0) {
+        renderConfigBar();
+        refreshScheduleTable();
+    }
+}
+
+// ─────────────────────────────────────────────
+// Time Cascade Math Helpers
+// ─────────────────────────────────────────────
+function timeToMinutes(timeStr) {
+    if (!timeStr) return 540; // Default 09:00 AM = 540 mins
+
+    const ampmMatch = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+    if (ampmMatch) {
+        let h = parseInt(ampmMatch[1], 10);
+        const m = parseInt(ampmMatch[2], 10) || 0;
+        const period = ampmMatch[3].toUpperCase();
+        if (period === 'PM' && h < 12) h += 12;
+        if (period === 'AM' && h === 12) h = 0;
+        return h * 60 + m;
+    }
+
+    const parts = String(timeStr).split(':');
+    let h = parseInt(parts[0], 10);
+    let m = parseInt(parts[1], 10);
+    if (isNaN(h)) h = 9;
+    if (isNaN(m)) m = 0;
+    return h * 60 + m;
+}
+
+function minutesToTime(mins) {
+    let totalMins = Math.round(mins);
+    if (isNaN(totalMins)) totalMins = 540;
+    let normalized = ((totalMins % 1440) + 1440) % 1440;
+    let h = Math.floor(normalized / 60);
+    let m = normalized % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function formatTimeTo12Hour(timeStr) {
+    if (!timeStr) return '';
+    if (/\s*(AM|PM)$/i.test(String(timeStr))) return String(timeStr);
+
+    const parts = String(timeStr).split(':');
+    if (parts.length < 2) return String(timeStr);
+    let h = parseInt(parts[0], 10);
+    let m = parseInt(parts[1], 10);
+    if (isNaN(h) || isNaN(m)) return String(timeStr);
+
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    if (h === 0) h = 12;
+    return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function formatDateForDisplay(dateStr) {
+    if (!dateStr) return '—';
+    const str = String(dateStr).trim();
+    const parts = str.split('-');
+    if (parts.length === 3 && parts[0].length === 4) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return str;
+}
+
+// Automatically recalculates Start and End times down the active stage table (Disabled for manual scheduling)
+async function triggerTimeCascade(stageItems, saveToDb = false) {
+    // Automatic time cascade disabled. Every program uses its own manually assigned schedule.
+    return;
+}
+
+// ─────────────────────────────────────────────
+// Dropdown Menu Helpers (Contextual Positioning)
+// ─────────────────────────────────────────────
+function closeDropdown(dropdown) {
+    if (!dropdown) return;
+    dropdown.classList.remove('show');
+    setTimeout(() => {
+        if (!dropdown.classList.contains('show')) {
+            dropdown.style.display = 'none';
+        }
+    }, 180);
+}
+
+function getOrCreateDropdown() {
+    let dropdown = document.getElementById('schedTabDropdown');
+    if (!dropdown) {
+        dropdown = document.createElement('div');
+        dropdown.id = 'schedTabDropdown';
+        dropdown.className = 'sched-tab-dropdown-menu';
+        dropdown.style.position = 'fixed';
+        dropdown.style.zIndex = '10000';
+        dropdown.style.display = 'none';
+        dropdown.innerHTML = `
+            <a class="sched-dropdown-item edit-stage-opt">✏️ Edit Stage</a>
+            <a class="sched-dropdown-item delete-stage-opt text-danger">🗑️ Delete Stage</a>
+        `;
+        document.body.appendChild(dropdown);
+
+        // Bind clicks once
+        dropdown.querySelector('.edit-stage-opt').onclick = (e) => {
+            e.stopPropagation();
+            const id = dropdown.dataset.stageId;
+            closeDropdown(dropdown);
+            openEditStageModal(id);
+        };
+
+        dropdown.querySelector('.delete-stage-opt').onclick = (e) => {
+            e.stopPropagation();
+            const id = dropdown.dataset.stageId;
+            closeDropdown(dropdown);
+            deleteStage(id);
+        };
+
+        // Close on click outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.classList.contains('sched-tab-menu-btn')) {
+                closeDropdown(dropdown);
+            }
+        });
+
+        // Close on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeDropdown(dropdown);
+            }
+        });
+    }
+    return dropdown;
+}
+
+// ─────────────────────────────────────────────
+// Render Stage Navigation Tabs (Dynamically Loaded from DB)
+// ─────────────────────────────────────────────
+function renderStageTabs() {
+    const bar = document.getElementById('schedTabsBar');
+    const cfgBar = document.getElementById('schedConfigBar');
+    const tblWrap = document.getElementById('printableStageTable');
+    if (!bar) return;
+
+    // Empty State Check when no stages exist in DB
+    if (localStages.length === 0) {
+        bar.innerHTML = `
+            <div style="text-align:center; padding:3rem 1.5rem; width:100%; background:#ffffff; border:1px solid #D8E8DE; border-radius:16px; box-shadow:0 1px 3px rgba(0,0,0,0.02);">
+                <div style="font-size:2.5rem; margin-bottom:0.5rem;">🎪</div>
+                <h3 style="margin:0 0 0.4rem 0; font-weight:800; color:#17251B; font-size:1.15rem;">No stages available</h3>
+                <p style="margin:0 0 1.25rem 0; color:#64756A; font-size:0.9rem; font-weight:600;">Please create a stage first in Stage Management.</p>
+                <button class="btn btn-primary" id="btnCreateStageEmpty" style="font-weight:700; padding:0.6rem 1.5rem; font-size:0.95rem;">🎪 + Create Stage</button>
+            </div>
+        `;
+        const emptyBtn = document.getElementById('btnCreateStageEmpty');
+        if (emptyBtn) emptyBtn.onclick = openCreateStageModal;
+
+        if (cfgBar) cfgBar.style.display = 'none';
+        if (tblWrap) tblWrap.style.display = 'none';
+        return;
+    }
+
+    if (cfgBar) cfgBar.style.display = 'flex';
+    if (tblWrap) tblWrap.style.display = 'block';
+
+    // Verify active stage exists in loaded stages, else set to first stage
+    const stageNames = localStages.map(s => s.name);
+    if (!activeStage || !stageNames.includes(activeStage)) {
+        activeStage = stageNames[0];
+    }
+
+    let html = '';
+    localStages.forEach(stObj => {
+        const stName = stObj.name;
+        const count = mergedSchedules.filter(s => s.stage === stName).length;
+        const isActive = stName === activeStage;
+        const icon = stObj.icon || ((stName.toLowerCase().includes('off stage') || stObj.type === 'offstage') ? '📝' : '🎪');
+        const color = stObj.color || '';
+        const customStyle = color ? `border-top: 3px solid ${color};` : '';
+        
+        html += `
+            <div class="sched-tab-wrapper ${isActive ? 'active' : ''}">
+                <button class="sched-tab-btn ${isActive ? 'active' : ''}" data-stage="${window.escapeHTML(stName)}" style="${customStyle}">
+                    <span>${icon} ${window.escapeHTML(stName)}</span>
+                    <span style="background:${isActive ? '#eeefee' : '#D8E8DE'}; color:${isActive ? '#064E3B' : '#64756A'}; padding:0.15rem 0.55rem; border-radius:999px; font-size:0.75rem; font-weight:800; margin-right: 4px;">(${count})</span>
+                    <span class="sched-tab-menu-btn" data-id="${stObj.id}">⋮</span>
+                </button>
+            </div>
+        `;
+    });
+
+    bar.innerHTML = html;
+
+    // Attach tab switches and dropdown triggers
+    bar.querySelectorAll('.sched-tab-btn').forEach(btn => {
+        btn.onclick = (e) => {
+            // Prevent tab switch if clicking the menu button
+            if (e.target.classList.contains('sched-tab-menu-btn')) {
+                return;
+            }
+            activeStage = btn.dataset.stage;
+            selectedScheduleIds.clear();
+            updateBulkBar();
+            renderStageTabs();
+            renderConfigBar();
+            refreshScheduleTable();
+        };
+
+        const menuBtn = btn.querySelector('.sched-tab-menu-btn');
+        if (menuBtn) {
+            menuBtn.onclick = (e) => {
+                e.stopPropagation();
+                const id = menuBtn.dataset.id;
+                const dropdown = getOrCreateDropdown();
+                
+                // Toggle logic
+                const isCurrentlyOpenForThisStage = (dropdown.style.display === 'block' && dropdown.dataset.stageId === id);
+                
+                if (isCurrentlyOpenForThisStage) {
+                    closeDropdown(dropdown);
+                } else {
+                    dropdown.dataset.stageId = id;
+                    dropdown.style.display = 'block'; // Make block first to get client width/height
+                    
+                    const rect = menuBtn.getBoundingClientRect();
+                    const dropdownWidth = dropdown.offsetWidth || 150;
+                    const dropdownHeight = dropdown.offsetHeight || 88;
+                    const isMobile = window.innerWidth <= 768;
+                    
+                    let left = 0;
+                    let top = 0;
+                    let origin = 'top center';
+                    
+                    if (isMobile) {
+                        left = rect.left + rect.width / 2 - dropdownWidth / 2;
+                        top = rect.bottom + 8;
+                        origin = 'top center';
+                        
+                        // Keep within viewport
+                        if (left < 10) left = 10;
+                        if (left + dropdownWidth > window.innerWidth - 10) {
+                            left = window.innerWidth - dropdownWidth - 10;
+                        }
+                    } else {
+                        // Desktop: Right alignment with space check
+                        left = rect.right + 8;
+                        top = rect.top + rect.height / 2 - dropdownHeight / 2;
+                        origin = 'left center';
+                        
+                        if (left + dropdownWidth > window.innerWidth - 10) {
+                            left = rect.left - dropdownWidth - 8;
+                            origin = 'right center';
+                        }
+                        
+                        // Keep within viewport vertically
+                        if (top < 10) top = 10;
+                        if (top + dropdownHeight > window.innerHeight - 10) {
+                            top = window.innerHeight - dropdownHeight - 10;
+                        }
+                    }
+                    
+                    dropdown.style.left = `${left}px`;
+                    dropdown.style.top = `${top}px`;
+                    dropdown.style.transformOrigin = origin;
+                    
+                    // Force a reflow before adding class for transition
+                    dropdown.offsetHeight;
+                    dropdown.classList.add('show');
+                }
+            };
+        }
+    });
+
+    // Scroll active tab into view
+    const activeTab = bar.querySelector('.sched-tab-btn.active');
+    if (activeTab) {
+        activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+}
+
+// ─────────────────────────────────────────────
+// Stage Creation Modal (Stage Management)
+// ─────────────────────────────────────────────
+function openCreateStageModal() {
+    const modalTitle = document.getElementById('dynamicModalTitle');
+    const modalBody = document.getElementById('dynamicModalBody');
+    const modalOverlay = document.getElementById('dynamicModal');
+
+    modalTitle.textContent = "🎪 Create New Stage";
+
+    modalBody.innerHTML = `
+        <form id="createStageForm" autocomplete="off">
+            <div class="form-group">
+                <label class="form-label">Stage Name *</label>
+                <input type="text" id="newStageName" class="form-input" placeholder="e.g. Stage 1, Main Stage, Girls Stage, Off Stage A" required>
+            </div>
+            <div class="modal-actions" style="margin-top:1.25rem;">
+                <button type="submit" class="btn btn-primary w-full" id="saveStageBtn">Create Stage</button>
+            </div>
+        </form>
+    `;
+
+    modalOverlay.classList.remove('hidden');
+    document.getElementById('closeDynamicModalBtn').onclick = () => modalOverlay.classList.add('hidden');
+
+    document.getElementById('createStageForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('newStageName').value.trim();
+        if (!name) return;
+
+        const btn = document.getElementById('saveStageBtn');
+        btn.disabled = true;
+
+        try {
+            const docRef = doc(collection(db, "institutes", window.currentInstituteId, "stages"));
+            await setDoc(docRef, {
+                name: name,
+                stageName: name,
+                status: 'active',
+                order: localStages.length + 1,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            });
+
+            window.showToast(`✓ Stage "${name}" created successfully!`);
+            modalOverlay.classList.add('hidden');
+        } catch (err) {
+            console.error("Error creating stage:", err);
+            window.showToast("Failed to create stage.", "error");
+        } finally {
+            btn.disabled = false;
+        }
+    };
+}
+
+// ─────────────────────────────────────────────
+// Stage Helper Operations (Load, Edit, Save, Delete)
+// ─────────────────────────────────────────────
+function loadStageData(stageId) {
+    return localStages.find(s => s.id === stageId) || null;
+}
+
+function openEditStageModal(stageId) {
+    const stageObj = loadStageData(stageId);
+    if (!stageObj) {
+        window.showToast("Stage not found.", "error");
+        return;
+    }
+
+    const modalTitle = document.getElementById('dynamicModalTitle');
+    const modalBody = document.getElementById('dynamicModalBody');
+    const modalOverlay = document.getElementById('dynamicModal');
+
+    modalTitle.textContent = `✏️ Edit Stage: ${stageObj.name}`;
+
+    const cfg = stageConfigs[stageObj.name] || {
+        date: stageObj.date || stageObj.scheduleDate || new Date().toISOString().split('T')[0],
+        startTime: stageObj.startTime || '09:00',
+        defaultDuration: stageObj.defaultDuration || stageObj.duration || 20
+    };
+
+    modalBody.innerHTML = `
+        <form id="editStageForm" autocomplete="off">
+            <div class="form-group">
+                <label class="form-label">Stage Name *</label>
+                <input type="text" id="editStageName" class="form-input" value="${window.escapeHTML(stageObj.name)}" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Stage Type *</label>
+                <select id="editStageType" class="form-input" required>
+                    <option value="stage" ${stageObj.type === 'stage' ? 'selected' : ''}>🎪 On Stage</option>
+                    <option value="offstage" ${stageObj.type === 'offstage' ? 'selected' : ''}>📝 Off Stage</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Stage Date</label>
+                <input type="date" id="editStageDate" class="form-input" value="${cfg.date || ''}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Start Time</label>
+                <input type="time" id="editStageStart" class="form-input" value="${cfg.startTime || '09:00'}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Gap Between Programs (Minutes)</label>
+                <input type="number" id="editStageGap" class="form-input" value="${cfg.defaultDuration || 20}" min="1">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Stage Color (Theme)</label>
+                <input type="color" id="editStageColor" class="form-input" value="${stageObj.color || '#064E3B'}" style="height: 44px; padding: 4px;">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Stage Icon (Emoji)</label>
+                <input type="text" id="editStageIcon" class="form-input" value="${stageObj.icon || ''}" placeholder="e.g. 🎪, 📝, 🏆">
+            </div>
+            <div class="modal-actions" style="margin-top:1.25rem;">
+                <button type="submit" class="btn btn-primary w-full" id="saveStageChangesBtn">Save Changes</button>
+            </div>
+        </form>
+    `;
+
+    modalOverlay.classList.remove('hidden');
+    document.getElementById('closeDynamicModalBtn').onclick = () => modalOverlay.classList.add('hidden');
+
+    document.getElementById('editStageForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const newName = document.getElementById('editStageName').value.trim();
+        const newType = document.getElementById('editStageType').value;
+        const newDate = document.getElementById('editStageDate').value;
+        const newStartTime = document.getElementById('editStageStart').value;
+        const newGap = parseInt(document.getElementById('editStageGap').value, 10) || 20;
+        const newColor = document.getElementById('editStageColor').value;
+        const newIcon = document.getElementById('editStageIcon').value.trim();
+
+        if (!newName) return;
+
+        const btn = document.getElementById('saveStageChangesBtn');
+        btn.disabled = true;
+
+        try {
+            await saveStageChanges(stageId, {
+                name: newName,
+                type: newType,
+                date: newDate,
+                startTime: newStartTime,
+                defaultDuration: newGap,
+                color: newColor,
+                icon: newIcon
+            });
+
+            window.showToast(`✓ Stage "${newName}" updated successfully!`);
+            modalOverlay.classList.add('hidden');
+        } catch (err) {
+            console.error("Error updating stage:", err);
+            window.showToast("Failed to save stage changes.", "error");
+        } finally {
+            btn.disabled = false;
+        }
+    };
+}
+
+async function saveStageChanges(stageId, updatedFields) {
+    const stageObj = loadStageData(stageId);
+    if (!stageObj) throw new Error("Stage not found");
+
+    const oldName = stageObj.name;
+    const newName = updatedFields.name;
+    const newType = updatedFields.type;
+
+    const batch = writeBatch(db);
+    
+    // Update local config cache
+    stageConfigs[newName] = {
+        date: updatedFields.date,
+        startTime: updatedFields.startTime,
+        defaultDuration: updatedFields.defaultDuration,
+        color: updatedFields.color,
+        icon: updatedFields.icon
+    };
+
+    // 1. Update the stage document itself
+    const stageRef = doc(db, "institutes", window.currentInstituteId, "stages", stageId);
+    batch.update(stageRef, {
+        name: newName,
+        stageName: newName,
+        type: newType,
+        date: updatedFields.date,
+        startTime: updatedFields.startTime,
+        defaultDuration: updatedFields.defaultDuration,
+        color: updatedFields.color,
+        icon: updatedFields.icon,
+        updatedAt: serverTimestamp()
+    });
+
+    // 2. Propagate name/type changes to schedules if stage is renamed
+    const isOff = newType === 'offstage' || newName.toLowerCase().includes('off stage');
+    
+    const affectedSchedules = localSchedules.filter(s => s.stage === oldName);
+    affectedSchedules.forEach(s => {
+        const sRef = doc(db, "institutes", window.currentInstituteId, "schedules", s.id);
+        batch.update(sRef, {
+            stage: newName,
+            isOffStage: isOff,
+            scheduleDate: updatedFields.date,
+            updatedAt: serverTimestamp()
+        });
+    });
+
+    await batch.commit();
+
+    // If activeStage was the renamed stage, update activeStage state
+    if (activeStage === oldName) {
+        activeStage = newName;
+    }
+}
+
+async function deleteStage(stageId) {
+    const stageObj = loadStageData(stageId);
+    if (!stageObj) return;
+
+    const stageName = stageObj.name;
+
+    // First confirmation
+    const confirmDelete = await window.customConfirm(
+        `Delete "${stageName}"?\nThis action cannot be undone.`,
+        "Delete Stage",
+        { danger: true, okText: "Delete Permanently" }
+    );
+    if (!confirmDelete) return;
+
+    // Second confirmation if stage contains scheduled programs
+    const affectedSchedules = localSchedules.filter(s => s.stage === stageName);
+    if (affectedSchedules.length > 0) {
+        const confirmSlots = await window.customConfirm(
+            "This stage contains scheduled programs. Deleting it will also remove all schedule slots.",
+            "Warning: Scheduled Programs Exist",
+            { danger: true, okText: "Delete Permanently" }
+        );
+        if (!confirmSlots) return;
+    }
+
+    try {
+        const batch = writeBatch(db);
+        
+        // Remove stage doc
+        const stageRef = doc(db, "institutes", window.currentInstituteId, "stages", stageId);
+        batch.delete(stageRef);
+
+        // Remove all schedules belonging to that stage
+        affectedSchedules.forEach(s => {
+            const sRef = doc(db, "institutes", window.currentInstituteId, "schedules", s.id);
+            batch.delete(sRef);
+        });
+
+        await batch.commit();
+        window.showToast(`✓ Stage "${stageName}" deleted successfully!`);
+
+        // Select another stage if deleted stage was active
+        if (activeStage === stageName) {
+            const remainingStages = localStages.filter(s => s.id !== stageId);
+            if (remainingStages.length > 0) {
+                activeStage = remainingStages[0].name;
+            } else {
+                activeStage = '';
+            }
+        }
+    } catch (err) {
+        console.error("Error deleting stage:", err);
+        window.showToast("Failed to delete stage.", "error");
+    }
+}
+
+// ─────────────────────────────────────────────
+// Render Config & Setup Bar
+// ─────────────────────────────────────────────
+function renderConfigBar() {
+    const bar = document.getElementById('schedConfigBar');
+    if (!bar || !activeStage) return;
+
+    if (!stageConfigs[activeStage]) {
+        stageConfigs[activeStage] = {
+            date: new Date().toISOString().split('T')[0],
+            startTime: '09:00',
+            defaultDuration: 20
+        };
+    }
+
+    const cfg = stageConfigs[activeStage];
+
+    bar.innerHTML = `
+        <div class="sched-config-inputs">
+            <span style="font-weight:800; font-size:1rem; color:#17251B;">🎪 ${window.escapeHTML(activeStage)} Setup:</span>
+            <div class="sched-config-group">
+                <label>📅 Default Stage Date:</label>
+                <input type="date" id="cfgStageDate" class="sched-tbl-input" style="width:140px;" value="${cfg.date}">
+            </div>
+        </div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button class="btn btn-primary" id="btnAddProgramRow" style="font-weight:700;">
+                + Add Program Slot
+            </button>
+            <button class="btn btn-secondary" id="btnAddBreakRow" style="font-weight:700; background:#fef3c7; color:#92400e; border:1px solid #fde68a;">
+                ☕ + Add Break Slot
+            </button>
+        </div>
+    `;
+
+    document.getElementById('cfgStageDate').onchange = (e) => {
+        cfg.date = e.target.value;
+        updateStageSchedulesDate(cfg.date);
+    };
+
+    document.getElementById('btnAddProgramRow').onclick = openAddProgramRowModal;
+    document.getElementById('btnAddBreakRow').onclick = openAddBreakModal;
+}
+
+async function updateStageSchedulesDate(newDate) {
+    const activeItems = mergedSchedules.filter(s => s.stage === activeStage);
+    if (activeItems.length === 0) return;
+
+    const batch = writeBatch(db);
+    activeItems.forEach(item => {
+        item.scheduleDate = newDate;
+        batch.update(doc(db, "institutes", window.currentInstituteId, "schedules", item.id), {
+            scheduleDate: newDate, updatedAt: serverTimestamp()
+        });
+    });
+    try {
+        await batch.commit();
+        window.showToast(`Updated date for all programs in ${activeStage}`);
+        refreshScheduleTable();
+    } catch (e) {
+        console.error("Error updating stage dates:", e);
+    }
+}
+
+// ─────────────────────────────────────────────
+// Render Active Stage Schedule Table
+// ─────────────────────────────────────────────
+function refreshScheduleTable() {
+    const tbody = document.getElementById('schedTableBody');
+    if (!tbody || !activeStage) return;
+
+    const activeItems = mergedSchedules.filter(s => s.stage === activeStage);
+    activeItems.sort((a, b) => a.runningOrder - b.runningOrder);
+
+    if (activeItems.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="9" style="text-align:center; padding:3rem 1.5rem;">
+                    <div style="font-size:2rem; margin-bottom:0.5rem;">📝</div>
+                    <h4 style="margin:0; font-weight:800; color:#17251B;">No Programs Scheduled in ${window.escapeHTML(activeStage)}</h4>
+                    <p style="margin:0.25rem 0 1rem 0; color:#64756A; font-size:0.85rem;">Add a competition program slot or insert a break slot below.</p>
+                    <div style="display:flex; gap:0.5rem; justify-content:center; margin-top:0.75rem;">
+                        <button class="btn btn-primary" id="btnAddProgramRowEmpty">+ Add Program Slot</button>
+                        <button class="btn btn-secondary" id="btnAddBreakRowEmpty" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; font-weight:700;">☕ + Add Break Slot</button>
+                    </div>
+                </td>
+            </tr>
+        `;
+        document.getElementById('btnAddProgramRowEmpty').onclick = openAddProgramRowModal;
+        document.getElementById('btnAddBreakRowEmpty').onclick = openAddBreakModal;
+        return;
+    }
+
+    const footerCountEl = document.getElementById('schedFooterCount');
+    if (footerCountEl) {
+        footerCountEl.textContent = `Total Programs: ${activeItems.length}`;
+    }
+
+    tbody.innerHTML = activeItems.map((item, idx) => {
+        const isChecked = selectedScheduleIds.has(item.id);
+        const statusColors = {
+            'Not Scheduled': 'background:#ECFDF5; color:#64756A; border:1px solid #D8E8DE;',
+            'Scheduled': 'background:#D1FAE5; color:#047857; border:1px solid #bbf7d0;',
+            'Pending': 'background:#fef9c3; color:#a16207; border:1px solid #fef08a;',
+            'Running': 'background:#dbeafe; color:#1d4ed8; border:1px solid #bfdbfe;',
+            'Completed': 'background:#D1FAE5; color:#047857; border:1px solid #bbf7d0;',
+            'Delayed': 'background:#ffedd5; color:#c2410c; border:1px solid #fed7aa;',
+            'Cancelled': 'background:#fee2e2; color:#b91c1c; border:1px solid #fecaca;'
+        };
+
+        const defaultDate = item.scheduleDate || stageConfigs[activeStage]?.date || new Date().toISOString().split('T')[0];
+        const defaultStart = item.startTime || '09:00';
+        const defaultEnd = item.endTime || '09:30';
+
+        if (item.isBreak) {
+            const icon = getBreakIcon(item.programName);
+            return `
+                <tr class="sched-table-row is-break-row ${item.isLocked ? 'is-locked' : ''}" 
+                    draggable="${item.isLocked ? 'false' : 'true'}" 
+                    data-id="${item.id}" 
+                    data-idx="${idx}" 
+                    title="${item.isLocked ? '🔒 Locked Slot - Cannot be moved or reordered' : 'Drag to reorder slot'}"
+                    style="background:#ffffff; border-bottom:1px solid #ECFDF5; cursor:${item.isLocked ? 'not-allowed' : 'grab'};">
+                    <td style="text-align:center; padding:0.65rem 0.5rem; vertical-align:middle;">
+                        <input type="checkbox" class="sched-row-chk" data-id="${item.id}" ${isChecked ? 'checked' : ''} style="cursor:pointer; width:15px; height:15px;">
+                    </td>
+                    <td style="text-align:center; font-weight:800; color:#2563eb; padding:0.65rem 0.5rem; vertical-align:middle; font-size:0.9rem;">
+                        ${idx + 1}
+                    </td>
+                    <td style="padding:0.65rem 0.75rem; vertical-align:middle; font-weight:800; color:#17251B; font-size:0.9rem;">
+                        <div style="display:inline-flex; align-items:center; gap:0.4rem;">
+                            <span style="font-size:1.05rem; color:#2563eb;">${icon}</span>
+                            ${item.isLocked ? '<span title="Locked Slot">🔒</span>' : ''}
+                            <span>${window.escapeHTML(item.programName)}</span>
+                        </div>
+                    </td>
+                    <td style="text-align:center; padding:0.65rem 0.5rem; vertical-align:middle;">
+                        <span style="background:#ffedd5; color:#c2410c; padding:3px 10px; border-radius:6px; font-weight:800; font-size:0.75rem; text-transform:uppercase; display:inline-block;">BREAK</span>
+                    </td>
+                    <td style="text-align:center; padding:0.5rem 0.4rem; vertical-align:middle; white-space:nowrap;">
+                        <input type="date" class="sched-tbl-input row-date-in" data-id="${item.id}" value="${defaultDate}" style="width:115px; font-size:0.78rem; font-weight:700; border:1px solid #D8E8DE; border-radius:6px; padding:0.25rem 0.35rem; text-align:center;">
+                    </td>
+                    <td style="text-align:center; padding:0.5rem 0.4rem; vertical-align:middle; white-space:nowrap;">
+                        <input type="time" class="sched-tbl-input row-start-in" data-id="${item.id}" value="${defaultStart}" style="width:85px; font-size:0.78rem; font-weight:700; border:1px solid #D8E8DE; border-radius:6px; padding:0.25rem 0.35rem; text-align:center;">
+                    </td>
+                    <td style="text-align:center; padding:0.5rem 0.4rem; vertical-align:middle; white-space:nowrap;">
+                        <input type="time" class="sched-tbl-input row-end-in" data-id="${item.id}" value="${defaultEnd}" style="width:85px; font-size:0.78rem; font-weight:700; border:1px solid #D8E8DE; border-radius:6px; padding:0.25rem 0.35rem; text-align:center;">
+                    </td>
+                    <td style="text-align:center; padding:0.65rem 0.5rem; vertical-align:middle;">
+                        <select class="sched-tbl-select row-status-sel" data-id="${item.id}" style="${statusColors[item.status] || ''} border-radius:20px; padding:4px 10px; font-size:0.775rem; font-weight:800; cursor:pointer; outline:none;">
+                            <option value="Pending" ${item.status === 'Pending' || item.status === 'Not Scheduled' ? 'selected' : ''}>🟡 Pending</option>
+                            <option value="Scheduled" ${item.status === 'Scheduled' ? 'selected' : ''}>🟢 Scheduled</option>
+                            <option value="Running" ${item.status === 'Running' ? 'selected' : ''}>🔵 Running</option>
+                            <option value="Completed" ${item.status === 'Completed' ? 'selected' : ''}>🟢 Completed</option>
+                            <option value="Delayed" ${item.status === 'Delayed' ? 'selected' : ''}>🟠 Delayed</option>
+                            <option value="Cancelled" ${item.status === 'Cancelled' ? 'selected' : ''}>🔴 Cancelled</option>
+                        </select>
+                    </td>
+                    <td style="text-align:center; padding:0.65rem 0.5rem; vertical-align:middle; white-space:nowrap;">
+                        <div style="display:inline-flex; align-items:center; gap:0.6rem; justify-content:center;">
+                            <button class="btn-tbl-act btn-toggle-lock" data-id="${item.id}" title="${item.isLocked ? 'Unlock Slot (Allows moving)' : 'Lock Slot (Prevents moving)'}" style="background:none; border:none; cursor:pointer; font-size:1.05rem; opacity:${item.isLocked ? '1' : '0.65'};">${item.isLocked ? '🔒' : '🔓'}</button>
+                            <button class="btn-tbl-act btn-del-row text-danger" data-id="${item.id}" title="Delete Slot" style="background:none; border:none; cursor:pointer; font-size:1.05rem; color:#EF4444;">🗑️</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        const catNameUpper = (item.categoryName || 'GENERAL').toUpperCase();
+        const catBadgeBg = catNameUpper.includes('SUB') ? 'background:#dbeafe; color:#1d4ed8;' : (catNameUpper === 'GENERAL' ? 'background:#D1FAE5; color:#047857;' : 'background:#e0e7ff; color:#3730a3;');
+
+        const progData = localPrograms.find(p => p.id === item.programId);
+        const genderVal = progData ? (progData.genderCategory || progData.gender || progData.Gender) : null;
+        const genderHtml = genderVal ? `<div style="font-size:0.75rem; color:#64756A; font-weight:600; margin-top:3px; line-height:1.2;">${window.escapeHTML(String(genderVal).trim())}</div>` : '';
+
+        return `
+            <tr class="sched-table-row ${item.isLocked ? 'is-locked' : ''}" 
+                draggable="${item.isLocked ? 'false' : 'true'}" 
+                data-id="${item.id}" 
+                data-idx="${idx}" 
+                title="${item.isLocked ? '🔒 Locked Slot - Cannot be moved or dragged' : 'Drag to reorder slot'}"
+                style="background:#ffffff; border-bottom:1px solid #ECFDF5; cursor:${item.isLocked ? 'not-allowed' : 'grab'};">
+                <td style="text-align:center; padding:0.65rem 0.5rem; vertical-align:middle;">
+                    <input type="checkbox" class="sched-row-chk" data-id="${item.id}" ${isChecked ? 'checked' : ''} style="cursor:pointer; width:15px; height:15px;">
+                </td>
+                <td style="text-align:center; font-weight:800; color:#2563eb; padding:0.65rem 0.5rem; vertical-align:middle; font-size:0.9rem;">
+                    ${idx + 1}
+                </td>
+                <td style="padding:0.65rem 0.75rem; vertical-align:middle; font-weight:800; color:#17251B; font-size:0.9rem;">
+                    <div style="line-height:1.2;">
+                        ${item.isLocked ? '<span title="Locked Slot" style="margin-right:4px;">🔒</span>' : ''}
+                        ${item.programNumber ? `<span style="color:#64756A; font-weight:700; margin-right:4px;">[#${item.programNumber}]</span>` : ''}<span>${window.escapeHTML(item.programName)}</span>
+                    </div>
+                    ${genderHtml}
+                </td>
+                <td style="text-align:center; padding:0.65rem 0.5rem; vertical-align:middle;">
+                    <span class="sched-cat-badge" style="${catBadgeBg} padding:3px 10px; border-radius:6px; font-weight:800; font-size:0.75rem; text-transform:uppercase; display:inline-block;">${window.escapeHTML(catNameUpper)}</span>
+                </td>
+                <td style="text-align:center; padding:0.5rem 0.4rem; vertical-align:middle; white-space:nowrap;">
+                    <input type="date" class="sched-tbl-input row-date-in" data-id="${item.id}" value="${defaultDate}" style="width:115px; font-size:0.78rem; font-weight:700; border:1px solid #D8E8DE; border-radius:6px; padding:0.25rem 0.35rem; text-align:center;">
+                </td>
+                <td style="text-align:center; padding:0.5rem 0.4rem; vertical-align:middle; white-space:nowrap;">
+                    <input type="time" class="sched-tbl-input row-start-in" data-id="${item.id}" value="${defaultStart}" style="width:85px; font-size:0.78rem; font-weight:700; border:1px solid #D8E8DE; border-radius:6px; padding:0.25rem 0.35rem; text-align:center;">
+                </td>
+                <td style="text-align:center; padding:0.5rem 0.4rem; vertical-align:middle; white-space:nowrap;">
+                    <input type="time" class="sched-tbl-input row-end-in" data-id="${item.id}" value="${defaultEnd}" style="width:85px; font-size:0.78rem; font-weight:700; border:1px solid #D8E8DE; border-radius:6px; padding:0.25rem 0.35rem; text-align:center;">
+                </td>
+                <td style="text-align:center; padding:0.65rem 0.5rem; vertical-align:middle;">
+                    <select class="sched-tbl-select row-status-sel" data-id="${item.id}" style="${statusColors[item.status] || ''} border-radius:20px; padding:4px 10px; font-size:0.775rem; font-weight:800; cursor:pointer; outline:none;">
+                        <option value="Pending" ${item.status === 'Pending' || item.status === 'Not Scheduled' ? 'selected' : ''}>🟡 Pending</option>
+                        <option value="Scheduled" ${item.status === 'Scheduled' ? 'selected' : ''}>🟢 Scheduled</option>
+                        <option value="Running" ${item.status === 'Running' ? 'selected' : ''}>🔵 Running</option>
+                        <option value="Completed" ${item.status === 'Completed' ? 'selected' : ''}>🟢 Completed</option>
+                        <option value="Delayed" ${item.status === 'Delayed' ? 'selected' : ''}>🟠 Delayed</option>
+                        <option value="Cancelled" ${item.status === 'Cancelled' ? 'selected' : ''}>🔴 Cancelled</option>
+                    </select>
+                </td>
+                <td style="text-align:center; padding:0.65rem 0.5rem; vertical-align:middle; white-space:nowrap;">
+                    <div style="display:inline-flex; align-items:center; gap:0.6rem; justify-content:center;">
+                        <button class="btn-tbl-act btn-toggle-lock" data-id="${item.id}" title="${item.isLocked ? 'Unlock Slot (Allows moving)' : 'Lock Slot (Prevents moving)'}" style="background:none; border:none; cursor:pointer; font-size:1.05rem; opacity:${item.isLocked ? '1' : '0.65'};">${item.isLocked ? '🔒' : '🔓'}</button>
+                        <button class="btn-tbl-act btn-del-row text-danger" data-id="${item.id}" title="Delete Slot" style="background:none; border:none; cursor:pointer; font-size:1.05rem; color:#EF4444;">🗑️</button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    attachTableEvents(tbody, activeItems);
+}
+
+// ─────────────────────────────────────────────
+// Attach Table Event Listeners
+// ─────────────────────────────────────────────
+function attachTableEvents(tbody, activeItems) {
+    tbody.querySelectorAll('.sched-row-chk').forEach(chk => {
+        chk.onchange = (e) => {
+            const id = e.target.dataset.id;
+            if (e.target.checked) selectedScheduleIds.add(id);
+            else selectedScheduleIds.delete(id);
+            updateBulkBar();
+        };
+    });
+
+    tbody.querySelectorAll('.row-date-in').forEach(input => {
+        input.onchange = async (e) => {
+            const id = e.target.dataset.id;
+            const newDate = e.target.value.trim();
+            if (!newDate) {
+                window.showToast("Schedule Date is required", "error");
+                return;
+            }
+            const item = activeItems.find(x => x.id === id);
+            if (item) item.scheduleDate = newDate;
+
+            const instId = window.currentInstituteId;
+            try {
+                await updateDoc(doc(db, "institutes", instId, "schedules", id), {
+                    scheduleDate: newDate, updatedAt: serverTimestamp()
+                });
+            } catch (err) { console.warn("schedules update:", err); }
+
+            window.showToast("Schedule Date updated");
+        };
+    });
+
+    tbody.querySelectorAll('.row-start-in, .row-end-in').forEach(input => {
+        input.onchange = async (e) => {
+            const id = e.target.dataset.id;
+            const row = e.target.closest('tr');
+            const startVal = row.querySelector('.row-start-in').value.trim();
+            const endVal = row.querySelector('.row-end-in').value.trim();
+
+            if (!startVal || !endVal) {
+                window.showToast("Both Start Time and End Time are required", "error");
+                return;
+            }
+
+            const startMins = timeToMinutes(startVal);
+            const endMins = timeToMinutes(endVal);
+
+            if (startMins < 0 || endMins < 0) {
+                window.showToast("Please enter valid Start and End times", "error");
+                return;
+            }
+
+            if (endMins <= startMins) {
+                window.showToast("End Time cannot be earlier than or equal to Start Time", "error");
+                return;
+            }
+
+            const calcDur = endMins - startMins;
+
+            const item = activeItems.find(x => x.id === id);
+            if (item) {
+                item.startTime = startVal;
+                item.endTime = endVal;
+                item.duration = calcDur;
+            }
+
+            const instId = window.currentInstituteId;
+            try {
+                await updateDoc(doc(db, "institutes", instId, "schedules", id), {
+                    startTime: startVal, endTime: endVal, duration: calcDur, updatedAt: serverTimestamp()
+                });
+            } catch (err) { console.warn("schedules update:", err); }
+
+            window.showToast("Schedule times updated");
+        };
+    });
+
+    tbody.querySelectorAll('.row-parallel-chk').forEach(chk => {
+        chk.onchange = async (e) => {
+            const id = e.target.dataset.id;
+            const isChecked = e.target.checked;
+
+            await updateDoc(doc(db, "institutes", window.currentInstituteId, "schedules", id), {
+                isParallel: isChecked,
+                updatedAt: serverTimestamp()
+            });
+
+            const item = activeItems.find(x => x.id === id);
+            if (item) item.isParallel = isChecked;
+
+            await triggerTimeCascade(activeItems, true);
+            refreshScheduleTable();
+        };
+    });
+
+    tbody.querySelectorAll('.row-duration-in').forEach(input => {
+        input.onchange = async (e) => {
+            const id = e.target.dataset.id;
+            const newDur = parseInt(e.target.value, 10) || 20;
+            await updateDoc(doc(db, "institutes", window.currentInstituteId, "schedules", id), {
+                duration: newDur, updatedAt: serverTimestamp()
+            });
+            const item = activeItems.find(x => x.id === id);
+            if (item) item.duration = newDur;
+            triggerTimeCascade(activeItems, true);
+        };
+    });
+
+    tbody.querySelectorAll('.row-status-sel').forEach(sel => {
+        sel.onchange = async (e) => {
+            const id = e.target.dataset.id;
+            const newStatus = e.target.value;
+            await updateDoc(doc(db, "institutes", window.currentInstituteId, "schedules", id), {
+                status: newStatus, updatedAt: serverTimestamp()
+            });
+            window.showToast(`Status updated to ${newStatus}`);
+        };
+    });
+
+    tbody.querySelectorAll('.btn-toggle-lock').forEach(btn => {
+        btn.onclick = async () => {
+            const id = btn.dataset.id;
+            const item = activeItems.find(x => x.id === id);
+            if (item) {
+                const newLockState = !item.isLocked;
+                await updateDoc(doc(db, "institutes", window.currentInstituteId, "schedules", id), {
+                    isLocked: newLockState, updatedAt: serverTimestamp()
+                });
+                item.isLocked = newLockState;
+                window.showToast(newLockState ? '🔒 Slot locked (movement disabled)' : '🔓 Slot unlocked (movement enabled)');
+                refreshScheduleTable();
+            }
+        };
+    });
+    tbody.querySelectorAll('.btn-del-row').forEach(btn => {
+        btn.onclick = () => deleteRowSlot(btn.dataset.id);
+    });
+
+    // Table Drag and Drop (Enforces Lock Behavior)
+    let dragSrcIdx = null;
+    tbody.querySelectorAll('.sched-table-row').forEach(row => {
+        row.addEventListener('dragstart', (e) => {
+            const id = row.dataset.id;
+            const item = activeItems.find(x => x.id === id);
+            if (item && item.isLocked) {
+                e.preventDefault();
+                window.showToast('🔒 Locked schedule items cannot be moved', 'warning');
+                return false;
+            }
+            dragSrcIdx = parseInt(row.dataset.idx, 10);
+            row.classList.add('dragging');
+            e.dataTransfer.setData('text/plain', dragSrcIdx);
+        });
+
+        row.addEventListener('dragend', () => row.classList.remove('dragging'));
+
+        row.addEventListener('dragover', (e) => {
+            const id = row.dataset.id;
+            const item = activeItems.find(x => x.id === id);
+            if (item && item.isLocked) {
+                e.dataTransfer.dropEffect = 'none';
+            } else {
+                e.preventDefault();
+            }
+        });
+
+        row.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const targetIdx = parseInt(row.dataset.idx, 10);
+            const targetItem = activeItems[targetIdx];
+            const srcItem = dragSrcIdx !== null ? activeItems[dragSrcIdx] : null;
+
+            if (srcItem && srcItem.isLocked) {
+                window.showToast('🔒 Cannot move locked schedule slot', 'warning');
+                return;
+            }
+            if (targetItem && targetItem.isLocked) {
+                window.showToast('🔒 Target position is locked', 'warning');
+                return;
+            }
+
+            if (dragSrcIdx !== null && dragSrcIdx !== targetIdx) {
+                reorderRowsByIndex(activeItems, dragSrcIdx, targetIdx);
+            }
+        });
+    });
+}
+
+// ─────────────────────────────────────────────
+// Reordering & Slot Operations
+// ─────────────────────────────────────────────
+async function moveRowOrder(items, currentIdx, direction) {
+    const targetIdx = currentIdx + direction;
+    if (targetIdx < 0 || targetIdx >= items.length) return;
+    await reorderRowsByIndex(items, currentIdx, targetIdx);
+}
+
+async function reorderRowsByIndex(items, fromIdx, toIdx) {
+    const srcItem = items[fromIdx];
+    const targetItem = items[toIdx];
+    if ((srcItem && srcItem.isLocked) || (targetItem && targetItem.isLocked)) {
+        window.showToast('🔒 Locked schedule slots cannot be reordered', 'warning');
+        return;
+    }
+
+    const itemToMove = items.splice(fromIdx, 1)[0];
+    items.splice(toIdx, 0, itemToMove);
+
+    items.forEach((item, idx) => {
+        item.runningOrder = idx + 1;
+    });
+
+    await triggerTimeCascade(items, true);
+    refreshScheduleTable();
+}
+
+// Open modal to add break slot to active stage
+function openAddBreakModal() {
+    const modalTitle = document.getElementById('dynamicModalTitle');
+    const modalBody = document.getElementById('dynamicModalBody');
+    const modalOverlay = document.getElementById('dynamicModal');
+
+    modalTitle.textContent = `☕ Add Break Slot to ${activeStage}`;
+
+    const defaultDate = stageConfigs[activeStage]?.date || new Date().toISOString().split('T')[0];
+
+    modalBody.innerHTML = `
+        <form id="addBreakSlotForm">
+            <div class="form-group">
+                <label class="form-label">Break Title *</label>
+                <select id="selBreakTitleSelect" class="form-input" required>
+                    <option value="Tea Break">☕ Tea Break</option>
+                    <option value="Lunch Break">🍽️ Lunch Break</option>
+                    <option value="Prayer Break">🕌 Prayer Break</option>
+                    <option value="Stage Setup">🎪 Stage Setup</option>
+                    <option value="Judge Meeting">⚖️ Judge Meeting</option>
+                    <option value="Prize Distribution">🏆 Prize Distribution</option>
+                    <option value="Other">✏️ Other (Custom Title)</option>
+                </select>
+            </div>
+            <div class="form-group hidden" id="customBreakTitleGroup">
+                <label class="form-label">Custom Break Title *</label>
+                <input type="text" id="txtCustomBreakTitle" class="form-input" placeholder="e.g. Refreshment Break, Announcement">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Schedule Date *</label>
+                <input type="date" id="txtBreakDate" class="form-input" value="${defaultDate}" required>
+            </div>
+            <div class="form-row" style="display:grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                <div class="form-group">
+                    <label class="form-label">Start Time *</label>
+                    <input type="time" id="txtBreakStart" class="form-input" value="09:00" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">End Time *</label>
+                    <input type="time" id="txtBreakEnd" class="form-input" value="09:20" required>
+                </div>
+            </div>
+            <div class="modal-actions" style="margin-top:1.25rem;">
+                <button type="submit" class="btn btn-primary w-full" id="btnSaveBreakSlot">Save Break Slot</button>
+            </div>
+        </form>
+    `;
+
+    modalOverlay.classList.remove('hidden');
+
+    const breakSelect = document.getElementById('selBreakTitleSelect');
+    const customGroup = document.getElementById('customBreakTitleGroup');
+    const customInput = document.getElementById('txtCustomBreakTitle');
+
+    breakSelect.onchange = () => {
+        if (breakSelect.value === 'Other') {
+            customGroup.classList.remove('hidden');
+            customInput.required = true;
+            customInput.focus();
+        } else {
+            customGroup.classList.add('hidden');
+            customInput.required = false;
+        }
+    };
+
+    const closeModal = () => modalOverlay.classList.add('hidden');
+    document.getElementById('closeDynamicModalBtn').onclick = closeModal;
+
+    document.getElementById('addBreakSlotForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const selectVal = breakSelect.value;
+        const customVal = customInput.value.trim();
+        const breakTitle = (selectVal === 'Other') ? (customVal || 'Break') : selectVal;
+
+        const bDate = document.getElementById('txtBreakDate').value.trim();
+        const bStart = document.getElementById('txtBreakStart').value.trim();
+        const bEnd = document.getElementById('txtBreakEnd').value.trim();
+
+        if (!bDate || !bStart || !bEnd) {
+            window.showToast("Date, Start Time, and End Time are required.", "error");
+            return;
+        }
+        const sMins = timeToMinutes(bStart);
+        const eMins = timeToMinutes(bEnd);
+        if (sMins < 0 || eMins < 0 || eMins <= sMins) {
+            window.showToast("End Time cannot be earlier than or equal to Start Time.", "error");
+            return;
+        }
+
+        const btn = document.getElementById('btnSaveBreakSlot');
+        btn.disabled = true;
+
+        try {
+            const activeItems = mergedSchedules.filter(s => s.stage === activeStage);
+            const isOff = activeStage.toLowerCase().includes('off stage');
+
+            const calcDur = (eMins > sMins) ? (eMins - sMins) : 20;
+
+            const newDocRef = doc(collection(db, "institutes", window.currentInstituteId, "schedules"));
+            await setDoc(newDocRef, {
+                isBreak: true,
+                programId: '',
+                programName: breakTitle,
+                breakTitle: breakTitle,
+                stage: activeStage,
+                scheduleDate: bDate,
+                startTime: bStart,
+                endTime: bEnd,
+                duration: calcDur,
+                runningOrder: activeItems.length + 1,
+                status: 'Scheduled',
+                isOffStage: isOff,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            });
+
+            window.showToast(`✓ Break "${breakTitle}" added to ${activeStage}`);
+            closeModal();
+        } catch (err) {
+            console.error("Error adding break slot:", err);
+            window.showToast("Failed to add break slot.", "error");
+        } finally {
+            btn.disabled = false;
+        }
+    };
+}
+
+// Open modal to add published program to active stage
+async function openAddProgramRowModal() {
+    const modalTitle = document.getElementById('dynamicModalTitle');
+    const modalBody = document.getElementById('dynamicModalBody');
+    const modalOverlay = document.getElementById('dynamicModal');
+
+    modalTitle.textContent = `Add Program to ${activeStage}`;
+
+    // Filter published programs that are already scheduled in current stage
+    const currentStageProgIds = mergedSchedules.filter(s => s.stage === activeStage).map(s => s.programId);
+    const availablePrograms = localPrograms.filter(p => !currentStageProgIds.includes(p.id));
+
+    if (availablePrograms.length === 0) {
+        modalBody.innerHTML = `<div class="empty-state"><p>All published programs are already added to ${window.escapeHTML(activeStage)}.</p></div>`;
+        modalOverlay.classList.remove('hidden');
+        document.getElementById('closeDynamicModalBtn').onclick = () => modalOverlay.classList.add('hidden');
+        return;
+    }
+
+    // Resolve category details using getCachedCategories
+    const categories = await getCachedCategories(window.currentInstituteId) || [];
+    const getProgramCategoryName = (p) => {
+        if (p.categoryName) return p.categoryName;
+        const cat = categories.find(c => c.id === p.categoryId);
+        return cat ? cat.name : (p.categoryId === 'general_programs' ? 'General' : '');
+    };
+
+    const getProgramLocation = (p) => {
+        if (p.programLocation) return p.programLocation;
+        if (p.location) return p.location;
+        if (p.isOffStage !== undefined) return p.isOffStage ? 'Off Stage' : 'Stage';
+        return 'Stage';
+    };
+
+    // Build unique list of category names for filter dropdown
+    const categoryNamesList = [];
+    categories.forEach(c => {
+        if (c.name && !categoryNamesList.includes(c.name)) categoryNamesList.push(c.name);
+    });
+    availablePrograms.forEach(p => {
+        const cName = getProgramCategoryName(p) || 'General';
+        if (cName && !categoryNamesList.includes(cName)) categoryNamesList.push(cName);
+    });
+
+    const categoryOptionsHtml = categoryNamesList.map(cName => 
+        `<option value="${window.escapeHTML(cName)}">${window.escapeHTML(cName)}</option>`
+    ).join('');
+
+    // Sort available programs ascending by programNumber (numerically if possible)
+    const sortedPrograms = [...availablePrograms].sort((a, b) => {
+        const numA = parseInt(a.programNumber, 10);
+        const numB = parseInt(b.programNumber, 10);
+        if (isNaN(numA) && isNaN(numB)) {
+            return (a.programNumber || '').localeCompare(b.programNumber || '');
+        }
+        if (isNaN(numA)) return 1;
+        if (isNaN(numB)) return -1;
+        return numA - numB;
+    });
+
+    // Make dynamic modal wide for comfortable desktop & mobile browsing
+    const modalContainer = modalOverlay.querySelector('.modal-container');
+    if (modalContainer) {
+        modalContainer.classList.add('add-program-modal-container');
+    }
+
+    modalBody.innerHTML = `
+        <form id="addProgSlotForm" autocomplete="off" style="display:flex; flex-direction:column; gap:12px;">
+            <!-- Integrated Aligned Filter Header -->
+            <div class="add-prog-filter-bar" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; background:#F5FAF7; padding:12px; border-radius:12px; border:1px solid #D8E8DE;">
+                <div>
+                    <label style="display:block; font-size:0.75rem; font-weight:700; color:#64756A; margin-bottom:4px;">Category</label>
+                    <select id="programCategoryFilter" class="form-input" style="width:100%; font-size:0.85rem; font-weight:600; padding:6px 10px; height:38px; border-radius:8px;">
+                        <option value="">All Categories</option>
+                        ${categoryOptionsHtml}
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block; font-size:0.75rem; font-weight:700; color:#64756A; margin-bottom:4px;">Gender</label>
+                    <select id="programGenderFilter" class="form-input" style="width:100%; font-size:0.85rem; font-weight:600; padding:6px 10px; height:38px; border-radius:8px;">
+                        <option value="">All</option>
+                        <option value="Boys">Boys</option>
+                        <option value="Girls">Girls</option>
+                        <option value="Mixed">Mixed</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block; font-size:0.75rem; font-weight:700; color:#64756A; margin-bottom:4px;">Program Location</label>
+                    <select id="programLocationFilter" class="form-input" style="width:100%; font-size:0.85rem; font-weight:600; padding:6px 10px; height:38px; border-radius:8px;">
+                        <option value="">All</option>
+                        <option value="Stage">Stage</option>
+                        <option value="Off Stage">Off Stage</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block; font-size:0.75rem; font-weight:700; color:#64756A; margin-bottom:4px;">Search</label>
+                    <input type="text" id="programSearchInput" class="form-input" placeholder="Search name or number..." style="width:100%; font-size:0.85rem; font-weight:600; padding:6px 10px; height:38px; border-radius:8px;" autocomplete="off">
+                </div>
+            </div>
+
+            <!-- List Header Count -->
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:0 4px;">
+                <span id="progCountLabel" style="font-size:0.825rem; font-weight:700; color:#64756A;">Available Programs</span>
+                <span style="font-size:0.75rem; color:#64756A; font-weight:500;">Tip: Double-click card to add directly</span>
+            </div>
+
+            <!-- Scrollable Cards Grid Container -->
+            <div id="programCardsGrid" style="
+                max-height: 420px;
+                overflow-y: auto;
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+                gap: 10px;
+                padding: 4px;
+                border: 1px solid #D8E8DE;
+                border-radius: 12px;
+                background: #ffffff;
+                -webkit-overflow-scrolling: touch;
+            ">
+                <!-- Program cards injected dynamically -->
+            </div>
+
+            <input type="hidden" id="selProgId" name="programId" required>
+
+            <!-- Bottom Action Controls -->
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; background:#F5FAF7; padding:12px 16px; border-radius:12px; border:1px solid #D8E8DE; flex-wrap:wrap; margin-top:4px;">
+                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <label style="font-weight:700; font-size:0.85rem; color:#64756A; white-space:nowrap;">Duration (Mins):</label>
+                        <input type="number" id="selProgDur" class="form-input" value="${stageConfigs[activeStage]?.defaultDuration || 20}" min="1" style="width:90px; height:38px; font-weight:700;" required>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <input type="checkbox" id="chkAddProgIsParallel" style="width:18px; height:18px; cursor:pointer;">
+                        <label for="chkAddProgIsParallel" style="font-weight:700; font-size:0.85rem; color:#64756A; cursor:pointer;">⚡ Run at Same Time</label>
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <span id="selectedProgNotice" style="font-size:0.85rem; font-weight:700; color:#064E3B;">No program selected</span>
+                    <button type="submit" class="btn btn-primary" id="btnSubmitAddSlot" style="font-weight:700; padding:0.6rem 1.5rem;" disabled>+ Add to ${window.escapeHTML(activeStage)}</button>
+                </div>
+            </div>
+        </form>
+    `;
+
+    modalOverlay.classList.remove('hidden');
+
+    // UI Control references
+    const categoryFilter = document.getElementById('programCategoryFilter');
+    const genderFilter = document.getElementById('programGenderFilter');
+    const locationFilter = document.getElementById('programLocationFilter');
+    const searchInput = document.getElementById('programSearchInput');
+    const gridEl = document.getElementById('programCardsGrid');
+    const hiddenInput = document.getElementById('selProgId');
+    const submitBtn = document.getElementById('btnSubmitAddSlot');
+    const selectedNotice = document.getElementById('selectedProgNotice');
+    const countLabel = document.getElementById('progCountLabel');
+
+    let filteredPrograms = [...sortedPrograms];
+    let selectedProgId = '';
+
+    function renderProgramCards() {
+        if (countLabel) {
+            countLabel.textContent = `Showing ${filteredPrograms.length} of ${sortedPrograms.length} programs`;
+        }
+
+        if (filteredPrograms.length === 0) {
+            gridEl.innerHTML = `
+                <div style="grid-column: 1 / -1; padding:3rem 1.5rem; text-align:center; color:#64756A;">
+                    <div style="font-size:2rem; margin-bottom:0.4rem;">🔍</div>
+                    <h4 style="margin:0 0 0.25rem 0; font-weight:700; color:#17251B;">No programs match the selected filters</h4>
+                    <p style="margin:0; font-size:0.85rem;">Try clearing or adjusting your search and filter options.</p>
+                </div>
+            `;
+            return;
+        }
+
+        gridEl.innerHTML = filteredPrograms.map(p => {
+            const isSelected = p.id === selectedProgId;
+            const catName = getProgramCategoryName(p) || 'General';
+            const genderVal = p.genderCategory || p.gender || 'Mixed';
+            const typeName = p.programType ? (p.programType.charAt(0).toUpperCase() + p.programType.slice(1)) : 'Individual';
+            const locVal = getProgramLocation(p);
+
+            return `
+                <div class="add-prog-card ${isSelected ? 'selected' : ''}" data-id="${p.id}" style="
+                    background: ${isSelected ? '#e0e7ff' : '#ffffff'};
+                    border: 2px solid ${isSelected ? '#064E3B' : '#D8E8DE'};
+                    border-radius: 12px;
+                    padding: 12px 14px;
+                    cursor: pointer;
+                    transition: all 0.15s ease;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    box-shadow: ${isSelected ? '0 4px 12px rgba(67, 56, 202, 0.15)' : 'none'};
+                ">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                        <div style="font-weight:800; font-size:0.925rem; color:#17251B; line-height:1.3;">
+                            ${p.programNumber ? `<span style="color:#064E3B; background:#eeefee; padding:2px 6px; border-radius:6px; margin-right:6px; font-size:0.85rem; font-weight:800;">[#${window.escapeHTML(String(p.programNumber))}]</span>` : ''}
+                            <span>${window.escapeHTML(p.programName)}</span>
+                        </div>
+                        ${isSelected ? `<span style="background:#064E3B; color:#ffffff; width:20px; height:20px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:bold; flex-shrink:0;">✓</span>` : ''}
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-top:2px;">
+                        <span class="sched-cat-badge" style="background:#ECFDF5; color:#64756A; border-color:#D8E8DE; font-weight:700;">
+                            🏷️ ${window.escapeHTML(catName)}
+                        </span>
+                        <span class="sched-cat-badge" style="background:#ECFDF5; color:#065F46; border-color:#bbf7d0; font-weight:700;">
+                            👤 ${window.escapeHTML(genderVal)}
+                        </span>
+                        <span class="sched-cat-badge" style="background:#fefce8; color:#854d0e; border-color:#fef08a; font-weight:700;">
+                            👥 ${window.escapeHTML(typeName)}
+                        </span>
+                        <span class="sched-cat-badge" style="background:${locVal === 'Stage' ? '#eff6ff' : '#faf5ff'}; color:${locVal === 'Stage' ? '#1d4ed8' : '#7e22ce'}; border-color:${locVal === 'Stage' ? '#bfdbfe' : '#e9d5ff'}; font-weight:700;">
+                            ${locVal === 'Stage' ? '🎪 Stage' : '📝 Off Stage'}
+                        </span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // Attach click and double click handlers to cards
+        gridEl.querySelectorAll('.add-prog-card').forEach(card => {
+            card.onclick = () => {
+                const id = card.dataset.id;
+                selectProgramCard(id);
+            };
+            card.ondblclick = () => {
+                const id = card.dataset.id;
+                selectProgramCard(id);
+                document.getElementById('addProgSlotForm').requestSubmit();
+            };
+        });
+    }
+
+    function selectProgramCard(id) {
+        selectedProgId = id;
+        hiddenInput.value = id;
+        const prog = sortedPrograms.find(p => p.id === id);
+
+        if (prog) {
+            submitBtn.disabled = false;
+            selectedNotice.textContent = `Selected: ${prog.programNumber ? `[#${prog.programNumber}] ` : ''}${prog.programName}`;
+        } else {
+            submitBtn.disabled = true;
+            selectedNotice.textContent = "No program selected";
+        }
+
+        renderProgramCards();
+    }
+
+    function applyFilters() {
+        const query = searchInput.value.toLowerCase().trim();
+        const selectedCat = categoryFilter.value;
+        const selectedGen = genderFilter.value;
+        const selectedLoc = locationFilter.value;
+
+        filteredPrograms = sortedPrograms.filter(p => {
+            // 1. Category Filter
+            if (selectedCat) {
+                const pCat = getProgramCategoryName(p) || 'General';
+                if (pCat !== selectedCat) return false;
+            }
+
+            // 2. Gender Filter
+            if (selectedGen) {
+                const pGen = (p.genderCategory || p.gender || 'Mixed').trim();
+                if (pGen.toLowerCase() !== selectedGen.toLowerCase()) return false;
+            }
+
+            // 3. Location Filter
+            if (selectedLoc) {
+                const pLoc = getProgramLocation(p);
+                if (pLoc !== selectedLoc) return false;
+            }
+
+            // 4. Search Query
+            if (query) {
+                const nameStr = String(p.programName || '').toLowerCase();
+                const numStr = String(p.programNumber ?? '').toLowerCase();
+                const nameMatch = nameStr.includes(query);
+                const numMatch = numStr.includes(query);
+                const bothCombined = `${numStr} ${nameStr}`.includes(query);
+                if (!nameMatch && !numMatch && !bothCombined) return false;
+            }
+
+            return true;
+        });
+
+        renderProgramCards();
+    }
+
+    function debounce(fn, ms) {
+        let t;
+        return function(...args) {
+            clearTimeout(t);
+            t = setTimeout(() => fn.apply(this, args), ms);
+        };
+    }
+
+    categoryFilter.onchange = applyFilters;
+    genderFilter.onchange = applyFilters;
+    locationFilter.onchange = applyFilters;
+    searchInput.oninput = debounce(applyFilters, 200);
+
+    const closeModal = () => {
+        modalOverlay.classList.add('hidden');
+        if (modalContainer) {
+            modalContainer.classList.remove('add-program-modal-container');
+        }
+    };
+    document.getElementById('closeDynamicModalBtn').onclick = closeModal;
+
+    // Render initial cards grid
+    renderProgramCards();
+
+    // Form submit handler
+    document.getElementById('addProgSlotForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const progId = hiddenInput.value;
+        if (!progId) {
+            window.showToast("Please select a program card first.", "error");
+            return;
+        }
+
+        const dur = parseInt(document.getElementById('selProgDur').value, 10) || 20;
+        const isParallel = !!document.getElementById('chkAddProgIsParallel')?.checked;
+        const prog = sortedPrograms.find(p => p.id === progId);
+        if (!prog) return;
+
+        submitBtn.disabled = true;
+
+        try {
+            const activeItems = mergedSchedules.filter(s => s.stage === activeStage);
+            const isOff = activeStage.toLowerCase().includes('off stage');
+
+            const sDate = prog.scheduleDate || stageConfigs[activeStage]?.date || new Date().toISOString().split('T')[0];
+            const sStart = prog.startTime || '09:00';
+            const sEnd = prog.endTime || '09:30';
+
+            const durInputVal = parseInt(document.getElementById('selProgDur')?.value, 10);
+            const sMins = timeToMinutes(sStart);
+            const eMins = timeToMinutes(sEnd);
+            const calcDur = (eMins > sMins) ? (eMins - sMins) : 20;
+            const durVal = !isNaN(durInputVal) && durInputVal > 0 ? durInputVal : calcDur;
+
+            const newDocRef = doc(collection(db, "institutes", window.currentInstituteId, "schedules"));
+            await setDoc(newDocRef, {
+                programId: progId,
+                programName: prog.programName || 'Unnamed Program',
+                stage: activeStage,
+                scheduleDate: sDate,
+                startTime: sStart,
+                endTime: sEnd,
+                duration: durVal,
+                runningOrder: activeItems.length + 1,
+                status: 'Pending',
+                isOffStage: isOff,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            });
+
+            window.showToast(`✓ Program "${prog.programName}" added to ${activeStage}`);
+
+            // Preserve current scroll position of cards grid
+            const currentScrollTop = gridEl.scrollTop;
+
+            // Remove newly scheduled program from available list in memory
+            const addedIdx = sortedPrograms.findIndex(p => p.id === progId);
+            if (addedIdx !== -1) {
+                sortedPrograms.splice(addedIdx, 1);
+            }
+
+            // Reset current selection state so next program can be selected
+            selectedProgId = '';
+            hiddenInput.value = '';
+            selectedNotice.textContent = "No program selected";
+
+            // Re-apply existing filters & search without resetting filter fields
+            applyFilters();
+
+            // Restore scroll position
+            gridEl.scrollTop = currentScrollTop;
+        } catch (err) {
+            console.error("Error adding program to schedule:", err);
+            window.showToast("Failed to add program slot.", "error");
+            submitBtn.disabled = false;
+        }
+    };
+}
+
+async function duplicateRowSlot(id) {
+    const item = mergedSchedules.find(s => s.id === id);
+    if (!item) return;
+
+    const activeItems = mergedSchedules.filter(s => s.stage === activeStage);
+    const newDocRef = doc(collection(db, "institutes", window.currentInstituteId, "schedules"));
+    await setDoc(newDocRef, {
+        isBreak: !!item.isBreak,
+        breakTitle: item.breakTitle || item.programName || '',
+        programId: item.programId || '',
+        programName: item.isBreak ? `${item.programName} (Copy)` : `${item.programName} (Copy)`,
+        stage: activeStage,
+        scheduleDate: item.scheduleDate,
+        duration: item.duration,
+        isParallel: !!item.isParallel,
+        parallelGroupId: item.parallelGroupId || null,
+        isLocked: !!item.isLocked,
+        runningOrder: activeItems.length + 1,
+        status: 'Pending',
+        isOffStage: item.isOffStage,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+    });
+    window.showToast(item.isBreak ? "Break slot duplicated." : "Slot duplicated.");
+}
+
+async function deleteRowSlot(id) {
+    const confirmed = await window.customConfirm("Remove this program slot from the stage schedule?");
+    if (!confirmed) return;
+
+    try {
+        await deleteDoc(doc(db, "institutes", window.currentInstituteId, "schedules", id));
+        window.showToast("Slot removed.");
+    } catch (e) {
+        console.error(e);
+        window.showToast("Error deleting slot.", "error");
+    }
+}
+
+// ─────────────────────────────────────────────
+// Bulk Operations Execution
+// ─────────────────────────────────────────────
+function executeBulkDuration() {
+    const durStr = prompt("Enter new Duration in minutes for selected items:", "20");
+    if (!durStr) return;
+    const dur = parseInt(durStr, 10) || 20;
+
+    const batch = writeBatch(db);
+    selectedScheduleIds.forEach(id => {
+        batch.update(doc(db, "institutes", window.currentInstituteId, "schedules", id), {
+            duration: dur, updatedAt: serverTimestamp()
+        });
+    });
+    batch.commit().then(() => {
+        window.showToast("Bulk duration updated.");
+        selectedScheduleIds.clear();
+        updateBulkBar();
+    });
+}
+
+function executeBulkStatus() {
+    const status = prompt("Enter new Status (Pending, Scheduled, Running, Completed, Delayed, Cancelled):", "Scheduled");
+    if (!status) return;
+
+    const batch = writeBatch(db);
+    selectedScheduleIds.forEach(id => {
+        batch.update(doc(db, "institutes", window.currentInstituteId, "schedules", id), {
+            status: status.trim(), updatedAt: serverTimestamp()
+        });
+    });
+    batch.commit().then(() => {
+        window.showToast("Bulk status updated.");
+        selectedScheduleIds.clear();
+        updateBulkBar();
+    });
+}
+
+function executeBulkMove() {
+    if (localStages.length === 0) return;
+
+    const modalTitle = document.getElementById('dynamicModalTitle');
+    const modalBody = document.getElementById('dynamicModalBody');
+    const modalOverlay = document.getElementById('dynamicModal');
+
+    modalTitle.textContent = `Move ${selectedScheduleIds.size} Selected Items`;
+    let options = localStages.map(s => `<option value="${window.escapeHTML(s.name)}">${window.escapeHTML(s.name)}</option>`).join('');
+
+    modalBody.innerHTML = `
+        <form id="bulkMoveForm">
+            <div class="form-group">
+                <label class="form-label">Select Target Stage *</label>
+                <select id="selBulkStage" class="form-input" required>
+                    ${options}
+                </select>
+            </div>
+            <div class="modal-actions" style="margin-top:1.25rem;">
+                <button type="submit" class="btn btn-primary w-full">Move Items</button>
+            </div>
+        </form>
+    `;
+
+    modalOverlay.classList.remove('hidden');
+    document.getElementById('closeDynamicModalBtn').onclick = () => modalOverlay.classList.add('hidden');
+
+    document.getElementById('bulkMoveForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const targetStage = document.getElementById('selBulkStage').value;
+        const isOff = targetStage.toLowerCase().includes('off stage');
+
+        const batch = writeBatch(db);
+        selectedScheduleIds.forEach(id => {
+            batch.update(doc(db, "institutes", window.currentInstituteId, "schedules", id), {
+                stage: targetStage, isOffStage: isOff, updatedAt: serverTimestamp()
+            });
+        });
+        await batch.commit();
+        window.showToast(`Moved items to ${targetStage}`);
+        selectedScheduleIds.clear();
+        updateBulkBar();
+        modalOverlay.classList.add('hidden');
+    };
+}
+
+function executeBulkDelete() {
+    window.customConfirm(`Delete ${selectedScheduleIds.size} selected slots?`).then(confirmed => {
+        if (!confirmed) return;
+        const batch = writeBatch(db);
+        selectedScheduleIds.forEach(id => {
+            batch.delete(doc(db, "institutes", window.currentInstituteId, "schedules", id));
+        });
+        batch.commit().then(() => {
+            window.showToast("Bulk delete complete.");
+            selectedScheduleIds.clear();
+            updateBulkBar();
+        });
+    });
+}
+
+// ─────────────────────────────────────────────
+// Stage-Specific Exports (WhatsApp)
+// ─────────────────────────────────────────────
+function shareActiveStageWhatsApp() {
+    const activeItems = mergedSchedules.filter(s => s.stage === activeStage);
+    activeItems.sort((a, b) => a.runningOrder - b.runningOrder);
+
+    let msg = `*🏆 MEELAD SOFTWARE COMPETITION SCHEDULE*\n`;
+    msg += `*🎪 VENUE: ${activeStage.toUpperCase()}*\n`;
+    msg += `📅 Date: ${stageConfigs[activeStage]?.date || 'N/A'}\n\n`;
+
+    activeItems.forEach((item, idx) => {
+        const parallelTag = item.isParallel ? ` [⚡ SAME TIME${item.parallelGroupId ? ` - ${item.parallelGroupId}` : ''}]` : ``;
+        if (item.isBreak) {
+            const icon = getBreakIcon(item.programName);
+            msg += `*${idx + 1}. ${icon} ${item.programName} [BREAK]${parallelTag}*\n`;
+            msg += `   ⏱️ ${formatTimeTo12Hour(item.startTime || 'TBD')} - ${formatTimeTo12Hour(item.endTime || 'TBD')} (${item.duration}m) | Status: ${item.status}\n\n`;
+        } else {
+            msg += `*${idx + 1}. ${item.programNumber ? `[#${item.programNumber}] ` : ''}${item.programName}${parallelTag}*\n`;
+            msg += `   🏷️ Category: ${item.categoryName || 'Uncategorized'}\n`;
+            msg += `   ⏱️ ${formatTimeTo12Hour(item.startTime || 'TBD')} - ${formatTimeTo12Hour(item.endTime || 'TBD')} (${item.duration}m) | Status: ${item.status}\n\n`;
+        }
+    });
+
+    const url = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+}
+
+// ─────────────────────────────────────────────
+// Stage-Specific Dedicated Print & PDF Generator
+// ─────────────────────────────────────────────
+function openPrintSelectionModal() {
+    const modalTitle = document.getElementById('dynamicModalTitle');
+    const modalBody = document.getElementById('dynamicModalBody');
+    const modalOverlay = document.getElementById('dynamicModal');
+
+    if (!modalTitle || !modalBody || !modalOverlay) return;
+
+    modalTitle.textContent = `🖨️ Print Competition Schedule`;
+
+    const totalStagesCount = localStages.length || 1;
+
+    modalBody.innerHTML = `
+        <form id="printScheduleOptionsForm">
+            <div style="margin-bottom: 1.25rem;">
+                <label style="font-weight: 700; font-size: 0.9rem; color: #17251B; display: block; margin-bottom: 0.75rem;">
+                    Select Print Mode
+                </label>
+                <div style="display: flex; flex-direction: column; gap: 0.75rem; background: #F5FAF7; padding: 1rem; border-radius: 12px; border: 1px solid #D8E8DE;">
+                    <label style="display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; color: #64756A; font-size: 0.9rem;">
+                        <input type="radio" name="printMode" value="current" checked style="width: 18px; height: 18px; accent-color: #064E3B; cursor: pointer;">
+                        <span>Current Stage Only (${window.escapeHTML(activeStage || 'Current Stage')})</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; color: #64756A; font-size: 0.9rem;">
+                        <input type="radio" name="printMode" value="all" style="width: 18px; height: 18px; accent-color: #064E3B; cursor: pointer;">
+                        <span>All Stages (${totalStagesCount} ${totalStagesCount === 1 ? 'Stage' : 'Stages'})</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-actions" style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 1.25rem;">
+                <button type="button" class="btn btn-secondary" id="btnCancelPrintModal" style="font-weight: 700;">Cancel</button>
+                <button type="submit" class="btn btn-primary" style="font-weight: 700; background: #064E3B; border-color: #064E3B; padding: 0.5rem 1.25rem;">Generate PDF</button>
+            </div>
+        </form>
+    `;
+
+    modalOverlay.classList.remove('hidden');
+
+    const closeModal = () => modalOverlay.classList.add('hidden');
+    document.getElementById('closeDynamicModalBtn').onclick = closeModal;
+    document.getElementById('btnCancelPrintModal').onclick = closeModal;
+
+    document.getElementById('printScheduleOptionsForm').onsubmit = (e) => {
+        e.preventDefault();
+        const selectedMode = document.querySelector('input[name="printMode"]:checked')?.value || 'current';
+        closeModal();
+        executeSchedulePrint(selectedMode);
+    };
+}
+
+function executeSchedulePrint(mode = 'current') {
+    const instName = window.currentEventDetails?.eventName || window.currentInstituteDetails?.name || 'Admin Portal';
+    
+    let targetStages = [];
+    if (mode === 'all') {
+        if (localStages && localStages.length > 0) {
+            targetStages = localStages.map(s => s.name || s.stageName).filter(Boolean);
+        }
+        if (targetStages.length === 0) {
+            const uniqueSet = new Set(mergedSchedules.map(s => s.stage).filter(Boolean));
+            targetStages = Array.from(uniqueSet);
+        }
+        if (targetStages.length === 0 && activeStage) {
+            targetStages = [activeStage];
+        }
+    } else {
+        targetStages = [activeStage || 'Stage'];
+    }
+
+    let stagesHTML = '';
+
+    targetStages.forEach((stName) => {
+        const activeItems = mergedSchedules.filter(s => s.stage === stName);
+        activeItems.sort((a, b) => a.runningOrder - b.runningOrder);
+
+        let rowsHTML = '';
+        if (activeItems.length === 0) {
+            rowsHTML = `<tr><td colspan="5" style="text-align:center; padding:15px; color:#64756A;">No programs scheduled for this stage.</td></tr>`;
+        } else {
+            rowsHTML = activeItems.map((item, idx) => {
+                const itemDate = formatDateForDisplay(item.scheduleDate || stageConfigs[stName]?.date);
+                if (item.isBreak) {
+                    const icon = getBreakIcon(item.programName);
+                    return `
+                        <tr style="background-color: #fffbeb;">
+                            <td style="text-align:center; font-weight:700; color:#b45309; padding:6px 10px; border:1px solid #D8E8DE; font-size:12px;">${idx + 1}</td>
+                            <td style="padding:6px 10px; border:1px solid #D8E8DE; color:#78350f; word-wrap:break-word;">
+                                <div style="font-weight:800; font-size:13px; line-height:1.25; color:#78350f;">
+                                    ${icon} ${window.escapeHTML(item.programName)} <span style="font-size:10px; background:#fef3c7; color:#92400e; padding:1px 6px; border-radius:4px; margin-left:6px; border:1px solid #fde68a; font-weight:800;">BREAK</span>
+                                </div>
+                            </td>
+                            <td style="text-align:center; color:#78350f; font-weight:600; padding:6px 10px; border:1px solid #D8E8DE; font-size:12px;">${itemDate}</td>
+                            <td style="text-align:center; font-weight:700; padding:6px 10px; border:1px solid #D8E8DE; color:#b45309; font-size:12px;">${formatTimeTo12Hour(item.startTime) || '—'}</td>
+                            <td style="text-align:center; font-weight:700; padding:6px 10px; border:1px solid #D8E8DE; color:#b45309; font-size:12px;">${formatTimeTo12Hour(item.endTime) || '—'}</td>
+                        </tr>
+                    `;
+                }
+
+                const progData = localPrograms.find(p => p.id === item.programId);
+                const genderVal = progData ? (progData.genderCategory || progData.gender || progData.Gender) : null;
+                const genderDisplay = genderVal ? ` | ${window.escapeHTML(String(genderVal).trim().toUpperCase())}` : '';
+
+                return `
+                    <tr>
+                        <td style="text-align:center; font-weight:700; color:#64756A; padding:6px 10px; border:1px solid #D8E8DE; font-size:12px;">${idx + 1}</td>
+                        <td style="padding:6px 10px; border:1px solid #D8E8DE; color:#17251B; word-wrap:break-word;">
+                            <div style="font-weight:700; font-size:13px; line-height:1.25; color:#17251B;">
+                                ${item.programNumber ? `<span style="color:#3730a3; font-weight:800; margin-right:4px;">[#${item.programNumber}]</span>` : ''}${window.escapeHTML(item.programName)}
+                            </div>
+                            <div style="font-size:10.5px; color:#64756A; font-weight:500; margin-top:2px; line-height:1.2;">
+                                ${window.escapeHTML(item.categoryName || 'Uncategorized')}${genderDisplay}
+                            </div>
+                        </td>
+                        <td style="text-align:center; color:#64756A; font-weight:600; padding:6px 10px; border:1px solid #D8E8DE; font-size:12px;">${itemDate}</td>
+                        <td style="text-align:center; font-weight:700; padding:6px 10px; border:1px solid #D8E8DE; color:#1e40af; font-size:12px;">${formatTimeTo12Hour(item.startTime) || '—'}</td>
+                        <td style="text-align:center; font-weight:700; padding:6px 10px; border:1px solid #D8E8DE; color:#1e40af; font-size:12px;">${formatTimeTo12Hour(item.endTime) || '—'}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        stagesHTML += `
+            <div class="stage-print-block">
+                <div class="print-header">
+                    <h1>${window.escapeHTML(instName)}</h1>
+                    <h2>COMPETITION SCHEDULE - ${window.escapeHTML(stName.toUpperCase())}</h2>
+                    <p>Total Programs: ${activeItems.length}</p>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:50px; text-align:center;">SL NO</th>
+                            <th style="text-align:left;">PROGRAM NAME</th>
+                            <th style="width:110px; text-align:center;">DATE</th>
+                            <th style="width:105px; text-align:center;">START TIME</th>
+                            <th style="width:105px; text-align:center;">END TIME</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rowsHTML}
+                    </tbody>
+                </table>
+                <div class="footer">
+                    <span>Generated on: ${new Date().toLocaleString()}</span>
+                    <span>Meelad Software Schedule Management</span>
+                </div>
+            </div>
+        `;
+    });
+
+    const docTitle = (mode === 'all') ? `${instName} - All Stages Schedule` : `${instName} - ${activeStage} Schedule`;
+
+    const printHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>${window.escapeHTML(docTitle)}</title>
+            <style>
+                @page {
+                    size: A4 portrait;
+                    margin: 12mm 15mm;
+                }
+                * {
+                    box-sizing: border-box;
+                }
+                body {
+                    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+                    margin: 0;
+                    padding: 15px;
+                    color: #17251B;
+                    background: #ffffff;
+                    -webkit-print-color-adjust: exact !important;
+                    print-color-adjust: exact !important;
+                }
+                .print-container {
+                    width: 100%;
+                    margin: 0 auto;
+                }
+                .stage-print-block {
+                    page-break-after: always;
+                    break-after: page;
+                    width: 100%;
+                }
+                .stage-print-block:last-child {
+                    page-break-after: auto;
+                    break-after: auto;
+                }
+                .print-header {
+                    text-align: center;
+                    margin-bottom: 18px;
+                    border-bottom: 3px double #17251B;
+                    padding-bottom: 12px;
+                }
+                .print-header h1 {
+                    margin: 0 0 4px 0;
+                    font-size: 22px;
+                    text-transform: uppercase;
+                    color: #1e1b4b;
+                    letter-spacing: 0.04em;
+                    font-weight: 800;
+                }
+                .print-header h2 {
+                    margin: 0 0 6px 0;
+                    font-size: 16px;
+                    color: #064E3B;
+                    font-weight: 700;
+                    letter-spacing: 0.03em;
+                }
+                .print-header p {
+                    margin: 0;
+                    font-size: 13px;
+                    color: #64756A;
+                    font-weight: 600;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 10px;
+                    font-size: 13px;
+                    table-layout: fixed;
+                }
+                th {
+                    background-color: #F5FAF7;
+                    color: #64756A;
+                    padding: 8px 10px;
+                    border: 1px solid #D8E8DE;
+                    text-transform: uppercase;
+                    font-size: 11px;
+                    letter-spacing: 0.05em;
+                    font-weight: 800;
+                }
+                td {
+                    padding: 6px 10px;
+                    border: 1px solid #D8E8DE;
+                    vertical-align: middle;
+                }
+                .footer {
+                    margin-top: 25px;
+                    display: flex;
+                    justify-content: space-between;
+                    font-size: 11px;
+                    color: #64756A;
+                    border-top: 1px solid #D8E8DE;
+                    padding-top: 8px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="print-container">
+                ${stagesHTML}
+            </div>
+        </body>
+        </html>
+    `;
+
+    let iframe = document.getElementById('schedPrintIframe');
+    if (!iframe) {
+        iframe = document.createElement('iframe');
+        iframe.id = 'schedPrintIframe';
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        document.body.appendChild(iframe);
+    }
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(printHTML);
+    doc.close();
+
+    setTimeout(() => {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+    }, 250);
+}

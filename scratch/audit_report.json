@@ -1,0 +1,310 @@
+{
+  "total_lines": 9133,
+  "file_size_bytes": 482772,
+  "function_count": 60,
+  "functions": [
+    {
+      "name": "formatLabel",
+      "line": 8,
+      "firestore": true
+    },
+    {
+      "name": "ensureEventDetailsLoaded",
+      "line": 35,
+      "firestore": true
+    },
+    {
+      "name": "getEventName",
+      "line": 48,
+      "firestore": false
+    },
+    {
+      "name": "loadTeamBackgrounds",
+      "line": 56,
+      "firestore": false
+    },
+    {
+      "name": "resizeImageIfNeeded",
+      "line": 70,
+      "firestore": false
+    },
+    {
+      "name": "updateTeamCardUI",
+      "line": 121,
+      "firestore": false
+    },
+    {
+      "name": "renderTeamBgCards",
+      "line": 147,
+      "firestore": false
+    },
+    {
+      "name": "injectExportStyles",
+      "line": 217,
+      "firestore": false
+    },
+    {
+      "name": "getPrintIframe",
+      "line": 555,
+      "firestore": false
+    },
+    {
+      "name": "initExportsView",
+      "line": 574,
+      "firestore": false
+    },
+    {
+      "name": "handleScroll",
+      "line": 764,
+      "firestore": false
+    },
+    {
+      "name": "loadStaticData",
+      "line": 785,
+      "firestore": false
+    },
+    {
+      "name": "subscribeExportsHistory",
+      "line": 833,
+      "firestore": false
+    },
+    {
+      "name": "renderExportStats",
+      "line": 852,
+      "firestore": false
+    },
+    {
+      "name": "renderHistoryLogs",
+      "line": 906,
+      "firestore": false
+    },
+    {
+      "name": "getStatusBadge",
+      "line": 943,
+      "firestore": false
+    },
+    {
+      "name": "getScopeHtml",
+      "line": 952,
+      "firestore": false
+    },
+    {
+      "name": "getFormattedDateHtml",
+      "line": 1024,
+      "firestore": false
+    },
+    {
+      "name": "openExportsDropdown",
+      "line": 1180,
+      "firestore": false
+    },
+    {
+      "name": "ensureExportDrawerExists",
+      "line": 1271,
+      "firestore": false
+    },
+    {
+      "name": "refreshAwardTypesConfig",
+      "line": 1297,
+      "firestore": true
+    },
+    {
+      "name": "openExportDrawer",
+      "line": 1317,
+      "firestore": false
+    },
+    {
+      "name": "closeExportDrawer",
+      "line": 1328,
+      "firestore": false
+    },
+    {
+      "name": "renderDrawerContent",
+      "line": 1337,
+      "firestore": false
+    },
+    {
+      "name": "updateTeamBgVisibility",
+      "line": 1642,
+      "firestore": false
+    },
+    {
+      "name": "updateConditionalFilters",
+      "line": 1682,
+      "firestore": false
+    },
+    {
+      "name": "updateClassFilterState",
+      "line": 1985,
+      "firestore": false
+    },
+    {
+      "name": "updateProgramsDropdown",
+      "line": 2068,
+      "firestore": false
+    },
+    {
+      "name": "initAwardTypeMultiSelect",
+      "line": 2095,
+      "firestore": false
+    },
+    {
+      "name": "onDocClick",
+      "line": 2115,
+      "firestore": false
+    },
+    {
+      "name": "updateDisplay",
+      "line": 2138,
+      "firestore": false
+    },
+    {
+      "name": "cleanName",
+      "line": 2289,
+      "firestore": false
+    },
+    {
+      "name": "simulateExportProcessing",
+      "line": 2393,
+      "firestore": false
+    },
+    {
+      "name": "triggerRetry",
+      "line": 2425,
+      "firestore": false
+    },
+    {
+      "name": "triggerDelete",
+      "line": 2445,
+      "firestore": true
+    },
+    {
+      "name": "loadParticipants",
+      "line": 2462,
+      "firestore": true
+    },
+    {
+      "name": "resolveWinnerParticipant",
+      "line": 2585,
+      "firestore": false
+    },
+    {
+      "name": "triggerDownload",
+      "line": 2759,
+      "firestore": true
+    },
+    {
+      "name": "getProgramExportLabel",
+      "line": 2893,
+      "firestore": false
+    },
+    {
+      "name": "getProgramGenderDisplay",
+      "line": 2909,
+      "firestore": false
+    },
+    {
+      "name": "getCategoryMinClassSortInfo",
+      "line": 2917,
+      "firestore": false
+    },
+    {
+      "name": "compareCategoriesByMinClass",
+      "line": 2978,
+      "firestore": false
+    },
+    {
+      "name": "loadHtml2Pdf",
+      "line": 3016,
+      "firestore": false
+    },
+    {
+      "name": "compilePDF",
+      "line": 3030,
+      "firestore": false
+    },
+    {
+      "name": "buildColumnItems",
+      "line": 3034,
+      "firestore": false
+    },
+    {
+      "name": "getTextWidth",
+      "line": 3192,
+      "firestore": false
+    },
+    {
+      "name": "getTeamThemeIndex",
+      "line": 3572,
+      "firestore": false
+    },
+    {
+      "name": "updateTestCardDOM",
+      "line": 3654,
+      "firestore": false
+    },
+    {
+      "name": "isRegistered",
+      "line": 4920,
+      "firestore": false
+    },
+    {
+      "name": "chunkArray",
+      "line": 5229,
+      "firestore": false
+    },
+    {
+      "name": "renderValuationCard",
+      "line": 5957,
+      "firestore": false
+    },
+    {
+      "name": "buildAuditRow",
+      "line": 6258,
+      "firestore": false
+    },
+    {
+      "name": "renderWinnerRow",
+      "line": 6716,
+      "firestore": false
+    },
+    {
+      "name": "renderRows",
+      "line": 6945,
+      "firestore": false
+    },
+    {
+      "name": "getGradePriority",
+      "line": 7045,
+      "firestore": false
+    },
+    {
+      "name": "compileCSV",
+      "line": 7980,
+      "firestore": false
+    },
+    {
+      "name": "isRegistered",
+      "line": 8272,
+      "firestore": false
+    },
+    {
+      "name": "getGradePriority",
+      "line": 8581,
+      "firestore": false
+    },
+    {
+      "name": "writeCSVRow",
+      "line": 9081,
+      "firestore": false
+    },
+    {
+      "name": "filterResultsBySource",
+      "line": 9112,
+      "firestore": false
+    }
+  ],
+  "has_html2pdf": true,
+  "has_jspdf": true,
+  "has_print": true
+}
