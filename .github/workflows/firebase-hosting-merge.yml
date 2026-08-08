@@ -14,6 +14,6 @@ jobs:
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_MELAD_SOFTWARE }}
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_MEELAD_SOFTWARE_01 }}'
           channelId: live
-          projectId: melad-software
+          projectId: meelad-software-01
