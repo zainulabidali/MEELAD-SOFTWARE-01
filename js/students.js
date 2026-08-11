@@ -96,7 +96,7 @@ function getStudentPrograms(studentId) {
                         const cat = allCategories.find(c => c.id === prog.categoryId || c.name === prog.categoryId);
                         const catName = cat?.name || (prog.categoryId === 'general_programs' ? 'General' : prog.categoryId || 'General');
                         const loc = prog.programLocation || prog.location || 'Off Stage';
-                        const tName = p.teamName || teamMap.get(p.teamId) || '';
+                        const tName = teamMap.get(p.teamId) || p.teamName || '';
 
                         studentProgs.push({
                             id: p.programId,
@@ -591,7 +591,7 @@ async function openViewProgramsModal(stu) {
                         const cat = allCategories.find(c => c.id === prog.categoryId || c.name === prog.categoryId);
                         const catName = cat?.name || (prog.categoryId === 'general_programs' ? 'General' : prog.categoryId || 'General');
                         const loc = prog.programLocation || prog.location || 'Off Stage';
-                        const tName = p.teamName || teamMap.get(p.teamId) || '';
+                        const tName = teamMap.get(p.teamId) || p.teamName || '';
 
                         studentProgs.push({
                             id: p.programId,

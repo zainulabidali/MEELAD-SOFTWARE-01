@@ -1,4 +1,4 @@
-import { db } from './firebase.js';
+import { db, getCachedTeams } from './firebase.js';
 import {
     collection, doc, getDoc, getDocs, onSnapshot, query, where
 } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
@@ -38,6 +38,7 @@ let categoriesList = [];
 let selectedCategory = '';
 let selectedGender = '';
 let selectedProgramId = '';
+let allTeams = [];
 
 // Helper: Escape HTML
 function escapeHTML(str) {
@@ -362,7 +363,8 @@ function renderProgramResultCard() {
 
             const studentName = w.studentName || w.name || w.participantName || 'Participant';
             // Strip "Team " prefix to display ONLY the team name (e.g. FALAH, SWALAH)
-            const rawTeam = w.teamName || w.team || '';
+            const resolvedTeam = (w.teamId && allTeams.length) ? (allTeams.find(t => t.id === w.teamId)?.name || w.teamName) : w.teamName;
+            const rawTeam = resolvedTeam || w.team || '';
             const cleanTeamName = rawTeam.replace(/^Team\s+/i, '').trim();
 
             const gradeText = w.grade || w.marks || w.totalMarks ? `${w.grade || w.marks || w.totalMarks}` : '';
@@ -605,6 +607,9 @@ async function initPublicResultsHub() {
     const hasCache = loadCachedHubData();
 
     // Step 2: In background, fetch/listen to Firestore to verify & update cache silently
+    try {
+        allTeams = await getCachedTeams(instId) || [];
+    } catch(e) {}
     try {
         const instSnap = await getDoc(doc(db, "institutes", instId));
         if (instSnap.exists()) {

@@ -40,6 +40,15 @@ function rebuildTeamsById() {
     }
 }
 
+function resolveTeamName(p) {
+    if (!p) return '';
+    if (p.teamId && teamsById.has(String(p.teamId))) {
+        const name = teamsById.get(String(p.teamId)).name;
+        if (name) return name;
+    }
+    return p.teamName || '';
+}
+
 function getEffectiveEventName() {
     return eventConfig?.eventName || instituteDetails?.name || "Results Portal";
 }
@@ -1387,13 +1396,13 @@ function getMiniPosterHTML(r, bgId, templateId, resultNumber, madrasaName) {
         const w3 = sortedWinners[2];
 
         const name1 = w1 ? (isGroup ? (w1.studentName || 'TEAM A') : (w1.studentName || '—')) : '—';
-        const team1 = w1 ? (w1.teamName || '—') : '—';
+        const team1 = w1 ? (resolveTeamName(w1) || '—') : '—';
 
         const name2 = w2 ? (isGroup ? (w2.studentName || 'TEAM B') : (w2.studentName || '—')) : '—';
-        const team2 = w2 ? (w2.teamName || '—') : '—';
+        const team2 = w2 ? (resolveTeamName(w2) || '—') : '—';
 
         const name3 = w3 ? (isGroup ? (w3.studentName || 'TEAM C') : (w3.studentName || '—')) : '—';
-        const team3 = w3 ? (w3.teamName || '—') : '—';
+        const team3 = w3 ? (resolveTeamName(w3) || '—') : '—';
 
         const hasWinners = sortedWinners.length > 0;
 
@@ -1465,7 +1474,7 @@ function getMiniPosterHTML(r, bgId, templateId, resultNumber, madrasaName) {
             const rankColor = rankColors[rank] || '#ffffff';
             const rankLabel = rankLabels[rank] || `${rank}TH`;
             // FIX: resolve current team name via teamId; fall back to stored teamName
-            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || w.teamName || '—';
+            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || resolveTeamName(w) || '—';
 
             return `
                 <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 0.25px solid rgba(255,255,255,0.1); padding-bottom: 2px; box-sizing: border-box; width: 100%;">
@@ -1530,7 +1539,7 @@ function getMiniPosterHTML(r, bgId, templateId, resultNumber, madrasaName) {
             const rankColor = rankColors[rank] || '#ffffff';
             const rankLabel = rankLabels[rank] || `${rank}TH`;
             // FIX: resolve current team name via teamId
-            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || w.teamName || '—';
+            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || resolveTeamName(w) || '—';
 
             return `
                 <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255, 255, 255, 0.03); border: 0.25px solid rgba(255, 255, 255, 0.1); border-left: 1.5px solid ${rankColor}; border-radius: 4px; padding: 4px 6px; box-sizing: border-box; width: 100%;">
@@ -1598,7 +1607,7 @@ function getMiniPosterHTML(r, bgId, templateId, resultNumber, madrasaName) {
             const rank = w.rank;
             const nameText = isGroup ? (w.studentName || 'TEAM A') : (w.studentName || '—');
             // FIX: resolve current team name via teamId
-            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || w.teamName || '—';
+            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || resolveTeamName(w) || '—';
             const accentColor = rankAccentColors[rank] || '#ffffff';
 
             return `
@@ -1683,13 +1692,13 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
 
         const name1 = w1 ? (isGroup ? (w1.studentName || 'TEAM A') : (w1.studentName || '—')) : '—';
         // FIX: resolve current team names via teamId
-        const team1 = w1 ? ((w1.teamId && teamsById.get(String(w1.teamId))?.name) || w1.teamName || '—') : '—';
+        const team1 = w1 ? ((w1.teamId && teamsById.get(String(w1.teamId))?.name) || resolveTeamName(w1) || '—') : '—';
 
         const name2 = w2 ? (isGroup ? (w2.studentName || 'TEAM B') : (w2.studentName || '—')) : '—';
-        const team2 = w2 ? ((w2.teamId && teamsById.get(String(w2.teamId))?.name) || w2.teamName || '—') : '—';
+        const team2 = w2 ? ((w2.teamId && teamsById.get(String(w2.teamId))?.name) || resolveTeamName(w2) || '—') : '—';
 
         const name3 = w3 ? (isGroup ? (w3.studentName || 'TEAM C') : (w3.studentName || '—')) : '—';
-        const team3 = w3 ? ((w3.teamId && teamsById.get(String(w3.teamId))?.name) || w3.teamName || '—') : '—';
+        const team3 = w3 ? ((w3.teamId && teamsById.get(String(w3.teamId))?.name) || resolveTeamName(w3) || '—') : '—';
 
         const hasWinners = sortedWinners.length > 0;
 
@@ -1760,7 +1769,7 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
             const rank = w.rank;
             const nameText = isGroup ? (w.studentName || 'TEAM A') : (w.studentName || '—');
             // FIX: resolve current team name via teamId
-            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || w.teamName || '—';
+            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || resolveTeamName(w) || '—';
             const rankLabel = rankLabels[rank] || `${rank}TH PLACE`;
 
             return `
@@ -1808,7 +1817,7 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
             const rank = w.rank;
             const nameText = isGroup ? (w.studentName || 'TEAM A') : (w.studentName || '—');
             // FIX: resolve current team name via teamId
-            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || w.teamName || '—';
+            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || resolveTeamName(w) || '—';
             const rankLabel = rankLabels[rank] || `${rank}TH PLACE`;
 
             return `
@@ -1867,7 +1876,7 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
             const rank = w.rank;
             const nameText = isGroup ? (w.studentName || 'TEAM A') : (w.studentName || '—');
             // FIX: resolve current team name via teamId
-            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || w.teamName || '—';
+            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || resolveTeamName(w) || '—';
 
             return `
                 <div class="t1-row t1-rank-${rank <= 3 ? rank : 3}">
@@ -2802,7 +2811,7 @@ async function sharePosterContent(cardId) {
     const formatWinner = (w) => {
         if (!w) return '—';
         const namePart = isGroup ? w.studentName : w.studentName;
-        const teamPart = isGroup ? 'Group' : w.teamName;
+        const teamPart = isGroup ? 'Group' : resolveTeamName(w);
         return `${namePart} (${teamPart})`;
     };
 

@@ -278,9 +278,9 @@ function recalculateScorers(publishedResults) {
             if (!stu) {
                 // Double Fallback for legacy registration maps
                 const matchedTeam = allTeams.find(t => t.id === (item.teamId || ''));
-                const resolvedTeamName = item.teamName && item.teamName !== '—' && item.teamName !== 'undefined' && item.teamName !== 'null'
-                    ? item.teamName
-                    : (matchedTeam ? matchedTeam.name : 'No Team');
+                const resolvedTeamName = matchedTeam 
+                    ? matchedTeam.name 
+                    : (item.teamName && item.teamName !== '—' && item.teamName !== 'undefined' && item.teamName !== 'null' ? item.teamName : 'No Team');
                 stu = {
                     studentId: stuId,
                     studentName: item.studentName || '—',
@@ -292,10 +292,12 @@ function recalculateScorers(publishedResults) {
                     categoryName: r.categoryName || 'General'
                 };
             } else {
-                // Self-healing check: if teamName is empty/placeholder in stu cache, resolve it
-                if (!stu.teamName || stu.teamName === '—' || stu.teamName === 'undefined' || stu.teamName === 'null') {
-                    const matchedTeam = allTeams.find(t => t.id === (stu.teamId || ''));
-                    stu.teamName = matchedTeam ? matchedTeam.name : 'No Team';
+                // Dynamically resolve team name from current teams cache, fall back to stored string
+                const matchedTeam = allTeams.find(t => t.id === (stu.teamId || ''));
+                if (matchedTeam && matchedTeam.name) {
+                    stu.teamName = matchedTeam.name;
+                } else if (!stu.teamName || stu.teamName === '—' || stu.teamName === 'undefined' || stu.teamName === 'null') {
+                    stu.teamName = 'No Team';
                 }
             }
 

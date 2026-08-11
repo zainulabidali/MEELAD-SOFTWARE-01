@@ -24,6 +24,15 @@ let resultsFilter = {
 let allPrograms = [];
 let allResults = [];
 let allTeams = []; // FIX: used for teamId → name resolution at render time
+
+function resolveTeamName(p) {
+    if (!p) return '';
+    if (p.teamId && allTeams && allTeams.length) {
+        const matched = allTeams.find(t => String(t.id) === String(p.teamId));
+        if (matched && matched.name) return matched.name;
+    }
+    return p.teamName || '';
+}
 let unsubscribeResults = null;
 
 // ─────────────────────────────────────────────
@@ -681,7 +690,7 @@ async function openResultDetailPopup(r) {
 
             // FIX: resolve team display from allTeams via teamId first; fall back to stored teamName
             const _resolvedTeam = (item.teamId && allTeams) ? allTeams.find(t => String(t.id) === String(item.teamId)) : null;
-            const teamDisplay = _resolvedTeam?.name || item.teamName || '—';
+            const teamDisplay = _resolvedTeam?.name || resolveTeamName(item) || '—';
             const finalMark = hasScore ? item.finalMark : '—';
             const grade = (showGrade && hasScore) ? (item.grade || '') : '';
             const points = hasScore ? `${item.totalPoints || 0}pts` : '—';

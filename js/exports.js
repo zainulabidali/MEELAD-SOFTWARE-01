@@ -12,6 +12,15 @@ function formatLabel(str) {
         .replace(/\b\w/g, c => c.toUpperCase());
 }
 
+function resolveTeamName(p) {
+    if (!p) return '';
+    if (p.teamId && allTeams && allTeams.length) {
+        const matched = allTeams.find(t => String(t.id) === String(p.teamId));
+        if (matched && matched.name) return matched.name;
+    }
+    return p.teamName || '';
+}
+
 // ─────────────────────────────────────────────
 // Module State
 // ─────────────────────────────────────────────
@@ -2510,7 +2519,7 @@ async function loadParticipants(prog, limitTeamId, studentMap = {}) {
 
             teamEntries.forEach(e => {
                 const p = e.data;
-                if (!teamName && p.teamName) teamName = p.teamName;
+                if (!teamName && resolveTeamName(p)) teamName = resolveTeamName(p);
                 const groups = Array.isArray(p.groups) ? p.groups : [];
                 groups.forEach(g => {
                     const members = (g.members || []).map(m => {
@@ -2524,8 +2533,8 @@ async function loadParticipants(prog, limitTeamId, studentMap = {}) {
                     aggregatedGroups.push({
                         id: g.id || `${normalizedId}_${g.name || 'group'}`,
                         isGroup: true,
-                        name: g.name || p.teamName || 'Group',
-                        teamName: p.teamName || teamName || '',
+                        name: g.name || resolveTeamName(p) || 'Group',
+                        teamName: resolveTeamName(p) || teamName || '',
                         teamId: normalizedId,
                         members: members
                     });
@@ -2552,7 +2561,7 @@ async function loadParticipants(prog, limitTeamId, studentMap = {}) {
                     studentId: p.studentId || '',
                     name: resolvedStudent ? resolvedStudent.name : (p.studentName || '—'),
                     chestNumber: resolvedStudent ? resolvedStudent.chestNumber : (p.chestNumber || '—'),
-                    teamName: p.teamName || '',
+                    teamName: resolveTeamName(p) || '',
                     teamId: normalizedId
                 });
             });
@@ -2611,8 +2620,8 @@ function resolveWinnerParticipant(prog, w, participantsList, studentMap) {
         }
     }
     // 5. Match by teamName if it's a group program and there's only one group for that team name
-    if (!matchedPart && isGroupEvent && w.teamName) {
-        const teamGroups = parts.filter(p => p.isGroup && p.teamName === w.teamName);
+    if (!matchedPart && isGroupEvent && resolveTeamName(w)) {
+        const teamGroups = parts.filter(p => p.isGroup && resolveTeamName(p) === resolveTeamName(w));
         if (teamGroups.length === 1) {
             matchedPart = teamGroups[0];
         }
@@ -2642,7 +2651,7 @@ function resolveWinnerParticipant(prog, w, participantsList, studentMap) {
                         classId: resolvedStudent.classId || '',
                         categoryName: resolvedStudent.categoryName || '—',
                         categoryId: resolvedStudent.categoryId || '',
-                        teamName: resolvedStudent.teamName || matchedPart.teamName || w.teamName || '—',
+                        teamName: resolveTeamName(resolvedStudent) || resolveTeamName(matchedPart) || resolveTeamName(w) || '—',
                         teamId: resolvedStudent.teamId || matchedPart.teamId || w.teamId || '',
                         gender: resolvedStudent.gender || ''
                     });
@@ -2656,7 +2665,7 @@ function resolveWinnerParticipant(prog, w, participantsList, studentMap) {
                         classId: '',
                         categoryName: '—',
                         categoryId: '',
-                        teamName: matchedPart.teamName || w.teamName || '—',
+                        teamName: resolveTeamName(matchedPart) || resolveTeamName(w) || '—',
                         teamId: matchedPart.teamId || w.teamId || '',
                         gender: ''
                     });
@@ -2668,11 +2677,11 @@ function resolveWinnerParticipant(prog, w, participantsList, studentMap) {
             const chestNumbersStr = validChestNos.length > 0 ? validChestNos.join(' · ') : '—';
 
             return {
-                displayName: matchedPart.name || w.studentName || w.teamName || '—',
+                displayName: matchedPart.name || w.studentName || resolveTeamName(w) || '—',
                 chestNumbers: chestNumbersStr,
                 memberStudents: memberStudents,
                 teamId: matchedPart.teamId || w.teamId || '',
-                teamName: matchedPart.teamName || w.teamName || '—'
+                teamName: resolveTeamName(matchedPart) || resolveTeamName(w) || '—'
             };
         } else {
             // Individual participant entry
@@ -2694,7 +2703,7 @@ function resolveWinnerParticipant(prog, w, participantsList, studentMap) {
                 classId: resolvedStudent.classId || '',
                 categoryName: resolvedStudent.categoryName || '—',
                 categoryId: resolvedStudent.categoryId || '',
-                teamName: resolvedStudent.teamName || matchedPart.teamName || w.teamName || '—',
+                teamName: resolveTeamName(resolvedStudent) || resolveTeamName(matchedPart) || resolveTeamName(w) || '—',
                 teamId: resolvedStudent.teamId || matchedPart.teamId || w.teamId || '',
                 gender: resolvedStudent.gender || ''
             } : {
@@ -2705,7 +2714,7 @@ function resolveWinnerParticipant(prog, w, participantsList, studentMap) {
                 classId: '',
                 categoryName: '—',
                 categoryId: '',
-                teamName: matchedPart.teamName || w.teamName || '—',
+                teamName: resolveTeamName(matchedPart) || resolveTeamName(w) || '—',
                 teamId: matchedPart.teamId || w.teamId || '',
                 gender: ''
             };
@@ -2715,7 +2724,7 @@ function resolveWinnerParticipant(prog, w, participantsList, studentMap) {
                 chestNumbers: studentInfo.chestNumber,
                 memberStudents: [studentInfo],
                 teamId: matchedPart.teamId || w.teamId || '',
-                teamName: matchedPart.teamName || w.teamName || '—'
+                teamName: resolveTeamName(matchedPart) || resolveTeamName(w) || '—'
             };
         }
     } else {
@@ -2733,14 +2742,14 @@ function resolveWinnerParticipant(prog, w, participantsList, studentMap) {
             chestNumber: resolvedStudent.chestNumber || w.chestNumber || '—',
             className: resolvedStudent.className || '—',
             categoryName: resolvedStudent.categoryName || '—',
-            teamName: resolvedStudent.teamName || w.teamName || '—'
+            teamName: resolveTeamName(resolvedStudent) || resolveTeamName(w) || '—'
         } : {
             studentId: w.studentId || '',
             name: w.studentName || '—',
             chestNumber: w.chestNumber || '—',
             className: '—',
             categoryName: '—',
-            teamName: w.teamName || '—'
+            teamName: resolveTeamName(w) || '—'
         };
 
         return {
@@ -2748,7 +2757,7 @@ function resolveWinnerParticipant(prog, w, participantsList, studentMap) {
             chestNumbers: studentInfo.chestNumber,
             memberStudents: [studentInfo],
             teamId: w.teamId || '',
-            teamName: w.teamName || '—'
+            teamName: resolveTeamName(w) || '—'
         };
     }
 }
@@ -3127,8 +3136,8 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                 });
             } else if (sortRule === 'team') {
                 studentsList.sort((a, b) => {
-                    const teamA = teamNamesMap[a.teamId] || a.teamName || '';
-                    const teamB = teamNamesMap[b.teamId] || b.teamName || '';
+                    const teamA = teamNamesMap[a.teamId] || resolveTeamName(a) || '';
+                    const teamB = teamNamesMap[b.teamId] || resolveTeamName(b) || '';
                     return teamA.localeCompare(teamB, undefined, { sensitivity: 'base' });
                 });
             }
@@ -3515,7 +3524,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                 // Collect unique teams in the current export dataset (studentsList)
                 const uniqueTeams = [];
                 studentsList.forEach(stu => {
-                    const teamName = teamNamesMap[stu.teamId] || stu.teamName || '';
+                    const teamName = teamNamesMap[stu.teamId] || resolveTeamName(stu) || '';
                     const teamVal = teamName && teamName.trim() !== '' && teamName !== '—' ? teamName : 'NO TEAM';
                     const key = stu.teamId || teamVal.toLowerCase().trim();
                     if (!uniqueTeams.includes(key)) {
@@ -3562,7 +3571,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                             nameFontSize -= 0.5;
                         }
 
-                        const teamName = teamNamesMap[stu.teamId] || stu.teamName || '';
+                        const teamName = teamNamesMap[stu.teamId] || resolveTeamName(stu) || '';
                         const classVal = stu.className || stu.classId || '—';
                         const catVal = stu.categoryName || stu.categoryId || '—';
                         const teamVal = teamName && teamName.trim() !== '' && teamName !== '—' ? teamName : 'NO TEAM';
@@ -3797,7 +3806,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                     const catId = stu.categoryId || 'general';
                     const catName = stu.categoryName || 'General';
                     const teamId = stu.teamId || 'no-team';
-                    const teamName = teamNamesMap[stu.teamId] || stu.teamName || 'Independent';
+                    const teamName = teamNamesMap[stu.teamId] || resolveTeamName(stu) || 'Independent';
 
                     if (!groups[catId]) {
                         groups[catId] = {
@@ -3883,7 +3892,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                     const classId = stu.classId || 'standard';
                     const className = stu.className || 'Standard';
                     const teamId = stu.teamId || 'no-team';
-                    const teamName = teamNamesMap[stu.teamId] || stu.teamName || 'Independent';
+                    const teamName = teamNamesMap[stu.teamId] || resolveTeamName(stu) || 'Independent';
 
                     if (!groups[catId]) {
                         groups[catId] = {
@@ -4892,7 +4901,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                     const progNames = totalProgs > 0
                                         ? progs.map(p => window.escapeHTML(p.programName)).join(', ')
                                         : '—';
-                                    const teamName = teamNamesMap[s.teamId] || s.teamName || '—';
+                                    const teamName = teamNamesMap[s.teamId] || resolveTeamName(s) || '—';
                                     const className = s.className || s.class || s.classId || '—';
                                     const genderDisplay = s.gender === 'Male' ? 'Boys' : (s.gender === 'Female' ? 'Girls' : (s.gender || '—'));
 
@@ -5313,8 +5322,8 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                     });
                 } else if (sortRule === 'team') {
                     studentsList.sort((a, b) => {
-                        const teamA = teamNamesMap[a.teamId] || a.teamName || '';
-                        const teamB = teamNamesMap[b.teamId] || b.teamName || '';
+                        const teamA = teamNamesMap[a.teamId] || resolveTeamName(a) || '';
+                        const teamB = teamNamesMap[b.teamId] || resolveTeamName(b) || '';
                         return teamA.localeCompare(teamB, undefined, { sensitivity: 'base' });
                     });
                 }
@@ -5326,7 +5335,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                         const catId = stu.categoryId || 'general';
                         const catName = stu.categoryName || 'General';
                         const teamId = stu.teamId || 'no-team';
-                        const teamName = teamNamesMap[stu.teamId] || stu.teamName || 'Independent';
+                        const teamName = teamNamesMap[stu.teamId] || resolveTeamName(stu) || 'Independent';
 
                         if (!groups[catId]) {
                             groups[catId] = {
@@ -5540,7 +5549,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                         const classId = stu.classId || 'standard';
                         const className = stu.className || 'Standard';
                         const teamId = stu.teamId || 'no-team';
-                        const teamName = teamNamesMap[stu.teamId] || stu.teamName || 'Independent';
+                        const teamName = teamNamesMap[stu.teamId] || resolveTeamName(stu) || 'Independent';
 
                         if (!groups[catId]) {
                             groups[catId] = {
@@ -6319,7 +6328,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                     // Group actual participants by team for General Programs with individual registrations (1 row per team)
                     const teamsMap = {};
                     parts.forEach(item => {
-                        const tName = item.teamName || 'General';
+                        const tName = resolveTeamName(item) || 'General';
                         if (!teamsMap[tName]) teamsMap[tName] = [];
                         teamsMap[tName].push(item);
                     });
@@ -6445,7 +6454,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                             <td style="font-weight:800; color:#1e1b4b;">${window.escapeHTML(item.name)}</td>
                             <td style="font-weight:700; color:#475569;">${window.escapeHTML(className)}</td>
                             <td>
-                                <span class="call-team-badge">${window.escapeHTML(item.teamName || '—')}</span>
+                                <span class="call-team-badge">${window.escapeHTML(resolveTeamName(item) || '—')}</span>
                             </td>
                         </tr>
                     `;
@@ -6744,7 +6753,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
 
                     if (Array.isArray(r.marksData) && r.marksData.length > 0) {
                         r.marksData.forEach(w => {
-                            const team = w.teamName;
+                            const team = resolveTeamName(w);
                             const pts = Number(w.totalPoints) || 0;
                             if (w.teamId && w.teamId !== 'teamless' && team && team !== 'No Team' && pts > 0) {
                                 teamPoints.set(team, (teamPoints.get(team) || 0) + pts);
@@ -6755,7 +6764,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                 if (map) {
                                     const key = w.studentName;
                                     if (!map.has(key)) {
-                                        map.set(key, { name: w.studentName, teamName: w.teamName || '—', points: 0 });
+                                        map.set(key, { name: w.studentName, teamName: resolveTeamName(w) || '—', points: 0 });
                                     }
                                     map.get(key).points += pts;
                                 }
@@ -6763,7 +6772,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                         });
                     } else if (Array.isArray(r.winners)) {
                         r.winners.forEach(w => {
-                            const team = w.teamName;
+                            const team = resolveTeamName(w);
                             const pts = Number(w.marks) || 0;
                             if (w.teamId && w.teamId !== 'teamless' && team && team !== 'No Team' && pts > 0) {
                                 teamPoints.set(team, (teamPoints.get(team) || 0) + pts);
@@ -6774,7 +6783,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                 if (map) {
                                     const key = w.studentName;
                                     if (!map.has(key)) {
-                                        map.set(key, { name: w.studentName, teamName: w.teamName || '—', points: 0 });
+                                        map.set(key, { name: w.studentName, teamName: resolveTeamName(w) || '—', points: 0 });
                                     }
                                     map.get(key).points += pts;
                                 }
@@ -6861,7 +6870,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                     filteredResults.forEach(r => {
                         const winners = Array.isArray(r.winners) ? r.winners : [];
                         winners.forEach(w => {
-                            if (!w.teamName || w.teamName === 'No Team' || !w.teamId || w.teamId === 'teamless') return;
+                            if (!resolveTeamName(w) || resolveTeamName(w) === 'No Team' || !w.teamId || w.teamId === 'teamless') return;
                             if (f.teamId && w.teamId !== f.teamId) return;
 
                             const prog = allPrograms.find(p => p.id === r.programId);
@@ -6968,7 +6977,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                             r.marksData.forEach(m => {
                                 if (!m.grade || m.grade === 'none' || String(m.grade).trim() === '') return;
                                 const isWinner = winnersList.some(w => 
-                                    (r.programType === 'group' && m.teamName === w.teamName) ||
+                                    (r.programType === 'group' && m.teamName === resolveTeamName(w)) ||
                                     (r.programType !== 'group' && (m.studentId === w.studentId || m.studentName === w.studentName))
                                 );
                                 if (!isWinner) {
@@ -7051,7 +7060,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
 
                                     if (Array.isArray(r.marksData)) {
                                         match = r.marksData.find(m =>
-                                            (r.programType === 'group' && m.teamName === w.teamName) ||
+                                            (r.programType === 'group' && m.teamName === resolveTeamName(w)) ||
                                             (r.programType !== 'group' && m.studentId === w.studentId) ||
                                             (r.programType !== 'group' && m.studentName === w.studentName)
                                         );
@@ -7132,7 +7141,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                         chestNumber: chestNo,
                                         className: stu.className,
                                         categoryName: stu.categoryName,
-                                        teamName: stu.teamName,
+                                        teamName: resolveTeamName(stu),
                                         prizes: []
                                     });
                                 }
@@ -7195,7 +7204,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                                 <td style="font-weight:800; color:#1e1b4b; font-size:10.5px; padding: 5px 6px; border: 1px solid #cbd5e1;">${window.escapeHTML(stu.studentName)}</td>
                                                 <td style="font-weight:700; color:#475569; font-size:10px; padding: 5px 6px; border: 1px solid #cbd5e1;">${window.escapeHTML(stu.className)}</td>
                                                 <td style="font-weight:700; color:#475569; font-size:10px; padding: 5px 6px; border: 1px solid #cbd5e1;">${window.escapeHTML(stu.categoryName)}</td>
-                                                <td style="font-weight:700; color:#475569; font-size:10px; padding: 5px 6px; border: 1px solid #cbd5e1;">${window.escapeHTML(stu.teamName)}</td>
+                                                <td style="font-weight:700; color:#475569; font-size:10px; padding: 5px 6px; border: 1px solid #cbd5e1;">${window.escapeHTML(resolveTeamName(stu))}</td>
                                                 <td style="padding: 5px 6px; border: 1px solid #cbd5e1; vertical-align: top;">
                                                     <div style="display:flex; flex-direction:column; gap:1px;">
                                                         ${prizeDetailsHtml}
@@ -7286,7 +7295,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                     categoryName: r.categoryName || prog.categoryName || 'General',
                                     chestNumber: stu.chestNumber || '—',
                                     studentName: stu.name || '—',
-                                    teamName: stu.teamName || resolved.teamName || w.teamName || '—',
+                                    teamName: resolveTeamName(stu) || resolved.teamName || resolveTeamName(w) || '—',
                                     className: stu.className || '—'
                                 });
                             });
@@ -7352,7 +7361,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                                     <td style="font-weight:800; color:#1e1b4b; padding: 4px 5px; border: 1px solid #cbd5e1;">${window.escapeHTML(item.programNumber ? `[#${item.programNumber}] ${item.programName}` : item.programName)}</td>
                                                     <td style="text-align:center; font-weight:900; color:#0f172a; font-size:11px; padding: 4px 5px; border: 1px solid #cbd5e1;">${window.escapeHTML(item.chestNumber)}</td>
                                                     <td style="font-weight:800; color:#1e1b4b; padding: 4px 5px; border: 1px solid #cbd5e1;">${window.escapeHTML(item.studentName)}</td>
-                                                    <td style="font-weight:700; color:#475569; padding: 4px 5px; border: 1px solid #cbd5e1;">${window.escapeHTML(item.teamName)}</td>
+                                                    <td style="font-weight:700; color:#475569; padding: 4px 5px; border: 1px solid #cbd5e1;">${window.escapeHTML(resolveTeamName(item))}</td>
                                                     <td style="font-weight:700; color:#475569; padding: 4px 5px; border: 1px solid #cbd5e1;">${window.escapeHTML(item.className)}</td>
                                                 </tr>
                                             `).join('')}
@@ -7456,7 +7465,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                             className: stu.className || 'Standard',
                             categoryId: stu.categoryId || 'general',
                             categoryName: stu.categoryName || 'General',
-                            teamName: teamNamesMap[stu.teamId] || stu.teamName || 'Independent',
+                            teamName: teamNamesMap[stu.teamId] || resolveTeamName(stu) || 'Independent',
                             participationsCount: participations.length,
                             participationsList: participations,
                             status: statusLabel
@@ -7578,7 +7587,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                                 <tr>
                                                     <td style="text-align:center; font-weight:900; color:#0f172a;">${window.escapeHTML(s.chestNumber)}</td>
                                                     <td style="font-weight:800; color:#1e1b4b;">${window.escapeHTML(s.name)}</td>
-                                                    <td style="font-weight:700; color:#475569;">${window.escapeHTML(s.teamName)}</td>
+                                                    <td style="font-weight:700; color:#475569;">${window.escapeHTML(resolveTeamName(s))}</td>
                                                     <td style="text-align:center; font-weight:800; color:#4338ca;">${s.participationsCount}</td>
                                                     <td style="text-align:center; font-weight:700; color:${statusColors[s.status] || '#475569'}; font-size:0.75rem;">${s.status}</td>
                                                     <td style="font-size:0.72rem; color:#475569; font-weight:500;">${window.escapeHTML(s.participationsList.join(', ') || 'None')}</td>
@@ -7966,8 +7975,8 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
             const classComp = classA.localeCompare(classB, undefined, { numeric: true });
             if (classComp !== 0) return classComp;
 
-            const teamNameA = teamNamesMap[a.teamId] || a.teamName || '';
-            const teamNameB = teamNamesMap[b.teamId] || b.teamName || '';
+            const teamNameA = teamNamesMap[a.teamId] || resolveTeamName(a) || '';
+            const teamNameB = teamNamesMap[b.teamId] || resolveTeamName(b) || '';
             const teamComp = teamNameA.localeCompare(teamNameB);
             if (teamComp !== 0) return teamComp;
 
@@ -7992,7 +8001,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
         studentsList.forEach((stu, idx) => {
             const catName = stu.categoryName || 'General';
             const className = stu.className || 'Standard';
-            const teamName = teamNamesMap[stu.teamId] || stu.teamName || 'Independent';
+            const teamName = teamNamesMap[stu.teamId] || resolveTeamName(stu) || 'Independent';
             csvContent += `"${instName.replace(/"/g, '""')}","${catName.replace(/"/g, '""')}","${className.replace(/"/g, '""')}","${teamName.replace(/"/g, '""')}","${(stu.gender || '').replace(/"/g, '""')}",${idx + 1},"${(stu.chestNumber || '').replace(/"/g, '""')}","${(stu.name || '').replace(/"/g, '""')}"\n`;
         });
 
@@ -8190,7 +8199,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
                 const progNames = totalProgs > 0
                     ? progs.map(p => p.programName).join(', ')
                     : '—';
-                const teamName = teamNamesMap[s.teamId] || s.teamName || '—';
+                const teamName = teamNamesMap[s.teamId] || resolveTeamName(s) || '—';
                 const className = s.className || s.class || s.classId || '—';
                 const genderDisplay = s.gender === 'Male' ? 'Boys' : (s.gender === 'Female' ? 'Girls' : (s.gender || '—'));
 
@@ -8360,8 +8369,8 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
                 const classComp = classA.localeCompare(classB, undefined, { numeric: true });
                 if (classComp !== 0) return classComp;
 
-                const teamNameA = teamNamesMap[a.teamId] || a.teamName || '';
-                const teamNameB = teamNamesMap[b.teamId] || b.teamName || '';
+                const teamNameA = teamNamesMap[a.teamId] || resolveTeamName(a) || '';
+                const teamNameB = teamNamesMap[b.teamId] || resolveTeamName(b) || '';
                 const teamComp = teamNameA.localeCompare(teamNameB);
                 if (teamComp !== 0) return teamComp;
 
@@ -8386,7 +8395,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
             studentsList.forEach((stu, idx) => {
                 const catName = stu.categoryName || 'General';
                 const className = stu.className || 'Standard';
-                const teamName = teamNamesMap[stu.teamId] || stu.teamName || 'Independent';
+                const teamName = teamNamesMap[stu.teamId] || resolveTeamName(stu) || 'Independent';
 
                 // Build base row
                 csvContent += `"${instName.replace(/"/g, '""')}","${catName.replace(/"/g, '""')}","${className.replace(/"/g, '""')}","${teamName.replace(/"/g, '""')}","${(stu.gender || '').replace(/"/g, '""')}",${idx + 1},"${(stu.chestNumber || '').replace(/"/g, '""')}","${(stu.name || '').replace(/"/g, '""')}"`;
@@ -8447,7 +8456,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
             parts.forEach((item, idx) => {
                 const resolvedStudent = item.studentId ? studentMap[item.studentId] : null;
                 const className = resolvedStudent ? (resolvedStudent.className || resolvedStudent.classId || '—') : '—';
-                csvContent += `"${p.programName}","${p.categoryName}","${p.type}",${idx + 1},"${item.chestNumber || '—'}","${item.name}","${className}","${item.teamName || ''}"\n`;
+                csvContent += `"${p.programName}","${p.categoryName}","${p.type}",${idx + 1},"${item.chestNumber || '—'}","${item.name}","${className}","${resolveTeamName(item) || ''}"\n`;
             });
         });
     }
@@ -8462,7 +8471,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
             filteredResults.forEach(r => {
                 const winners = Array.isArray(r.winners) ? r.winners : [];
                 winners.forEach(w => {
-                    if (!w.teamName) return;
+                    if (!resolveTeamName(w)) return;
                     if (f.teamId && w.teamId !== f.teamId) return;
 
                     const prog = allPrograms.find(p => p.id === r.programId);
@@ -8503,7 +8512,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
                     r.marksData.forEach(m => {
                         if (!m.grade || m.grade === 'none' || String(m.grade).trim() === '') return;
                         const isWinner = winnersList.some(w => 
-                            (r.programType === 'group' && m.teamName === w.teamName) ||
+                            (r.programType === 'group' && m.teamName === resolveTeamName(w)) ||
                             (r.programType !== 'group' && (m.studentId === w.studentId || m.studentName === w.studentName))
                         );
                         if (!isWinner) {
@@ -8553,7 +8562,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
 
                     if (Array.isArray(r.marksData)) {
                         match = r.marksData.find(m =>
-                            (r.programType === 'group' && m.teamName === w.teamName) ||
+                            (r.programType === 'group' && m.teamName === resolveTeamName(w)) ||
                             (r.programType !== 'group' && m.studentId === w.studentId) ||
                             (r.programType !== 'group' && m.studentName === w.studentName)
                         );
@@ -8623,7 +8632,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
                                 chestNumber: chestNo,
                                 className: stu.className,
                                 categoryName: stu.categoryName,
-                                teamName: stu.teamName,
+                                teamName: resolveTeamName(stu),
                                 prizes: []
                             });
                         }
@@ -8656,7 +8665,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
             sortedStudents.forEach(stu => {
                 stu.prizes.sort((a, b) => a.categoryIndex - b.categoryIndex);
                 const prizeList = stu.prizes.map(p => `${p.programName} - ${p.position}`);
-                csvContent += `"${stu.chestNumber}","${stu.studentName}","${stu.className}","${stu.categoryName}","${stu.teamName}","${prizeList.join('; ')}"\n`;
+                csvContent += `"${stu.chestNumber}","${stu.studentName}","${stu.className}","${stu.categoryName}","${resolveTeamName(stu)}","${prizeList.join('; ')}"\n`;
             });
         }
 
@@ -8711,7 +8720,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
                     let match = null;
                     if (Array.isArray(r.marksData)) {
                         match = r.marksData.find(m =>
-                            (isGroup && m.teamName === w.teamName) ||
+                            (isGroup && m.teamName === resolveTeamName(w)) ||
                             (!isGroup && m.studentId === w.studentId) ||
                             (!isGroup && m.studentName === w.studentName)
                         );
@@ -8745,7 +8754,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
                             categoryName: r.categoryName || prog.categoryName || 'General',
                             chestNumber: stu.chestNumber || '—',
                             studentName: stu.name || '—',
-                            teamName: stu.teamName || resolved.teamName || w.teamName || '—',
+                            teamName: resolveTeamName(stu) || resolved.teamName || resolveTeamName(w) || '—',
                             className: stu.className || '—',
                             grade: gradeVal
                         });
@@ -8770,7 +8779,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
                         const catClean = item.categoryName.replace(/"/g, '""');
                         const chestClean = item.chestNumber.replace(/"/g, '""');
                         const nameClean = item.studentName.replace(/"/g, '""');
-                        const teamClean = item.teamName.replace(/"/g, '""');
+                        const teamClean = resolveTeamName(item).replace(/"/g, '""');
                         const classClean = item.className.replace(/"/g, '""');
                         const gradeClean = item.grade.replace(/"/g, '""');
 
@@ -8850,7 +8859,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
                     className: stu.className || 'Standard',
                     categoryId: stu.categoryId || 'general',
                     categoryName: stu.categoryName || 'General',
-                    teamName: teamNamesMap[stu.teamId] || stu.teamName || 'Independent',
+                    teamName: teamNamesMap[stu.teamId] || resolveTeamName(stu) || 'Independent',
                     participationsCount: participations.length,
                     participationsList: participations,
                     status: statusLabel
@@ -8887,7 +8896,7 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
             });
 
             studentDataList.forEach(s => {
-                csvContent += `"${s.categoryName}","${s.chestNumber}","${s.name}","${s.className}","${s.teamName}",${s.participationsCount},"${s.status}","${s.participationsList.join('; ')}"\n`;
+                csvContent += `"${s.categoryName}","${s.chestNumber}","${s.name}","${s.className}","${resolveTeamName(s)}",${s.participationsCount},"${s.status}","${s.participationsList.join('; ')}"\n`;
             });
         }
     }

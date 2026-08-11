@@ -901,7 +901,7 @@ export async function initParticipantsWorkflowView(container, topActions, { prog
                                     if (pId === progId) {
                                         studentGroupsMap.set(sId, {
                                             groupName: gName,
-                                            teamName: data.teamName || 'Other Team',
+                                            teamName: teamById.get(data.teamId)?.name || data.teamName || 'Other Team',
                                             memberCount: memberCount,
                                             members: g.members || []
                                         });
@@ -924,7 +924,7 @@ export async function initParticipantsWorkflowView(container, topActions, { prog
                                 id: g.id,
                                 name: g.name,
                                 teamId: data.teamId,
-                                teamName: data.teamName || 'Other Team',
+                                teamName: teamById.get(data.teamId)?.name || data.teamName || 'Other Team',
                                 members: g.members || []
                             });
                         });
@@ -1065,7 +1065,7 @@ export async function initParticipantsWorkflowView(container, topActions, { prog
                 const selectEl = document.getElementById('pwCopyGroupSelect');
                 if (selectEl) {
                     selectEl.innerHTML = `<option value="">Copy members from existing group...</option>` +
-                        allEventGroups.map(g => `<option value="${g.teamId}:${g.id}">${window.escapeHTML(g.teamName)} - ${window.escapeHTML(g.name)} (${g.members?.length || 0} members)</option>`).join('');
+                        allEventGroups.map(g => `<option value="${g.teamId}:${g.id}">${window.escapeHTML(teamById.get(g.teamId)?.name || g.teamName)} - ${window.escapeHTML(g.name)} (${g.members?.length || 0} members)</option>`).join('');
                 }
             }
 

@@ -1,4 +1,4 @@
-import { db, updateDashboardMetadata, getCachedCategories, getCachedPrograms, getCachedStudentsMap, computeDenseRanking, getCachedPointsConfig, DEFAULT_POINTS, getGradeAndPoints, getGradePointsForGrade, isValidManualGrade, resolveEffectiveGrade, aggregateManualGrades } from './firebase.js';
+import { db, updateDashboardMetadata, getCachedCategories, getCachedPrograms, getCachedStudentsMap, getCachedTeams, computeDenseRanking, getCachedPointsConfig, DEFAULT_POINTS, getGradeAndPoints, getGradePointsForGrade, isValidManualGrade, resolveEffectiveGrade, aggregateManualGrades } from './firebase.js';
 import {
     collection, getDocs, doc, getDoc, setDoc, onSnapshot, serverTimestamp, writeBatch, runTransaction
 } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
@@ -65,6 +65,7 @@ let markEntryFilter = {
 };
 
 let allPrograms = [];
+let allTeams = [];
 let allResults = new Map(); // programId -> resultDoc
 let unsubscribeMarkEntry = null;
 
@@ -95,6 +96,15 @@ export async function getLatestResultDoc(progId) {
 // Init View
 // ─────────────────────────────────────────────
 
+function resolveTeamName(p) {
+    if (!p) return '';
+    if (p.teamId && allTeams && allTeams.length) {
+        const matched = allTeams.find(t => String(t.id) === String(p.teamId));
+        if (matched && matched.name) return matched.name;
+    }
+    return p.teamName || '';
+}
+
 export async function initMarkEntryView(container, topActions) {
     if (!window.currentInstituteId) {
         container.innerHTML = '<div class="empty-state"><h3>Access Denied</h3><p>Please log in again.</p></div>';
@@ -115,6 +125,10 @@ export async function initMarkEntryView(container, topActions) {
 
     allPrograms = [];
     allResults.clear();
+
+    try {
+        allTeams = await getCachedTeams(window.currentInstituteId) || [];
+    } catch(e) { console.error("Error loading teams in mark-entry:", e); }
 
     // Load Categories for filter using the pre-existing cache
     let catOptions = '<option value="">All Categories</option>';
@@ -653,19 +667,19 @@ async function loadStudentsForProgram(prog) {
                 groups.forEach(g => {
                     list.push({
                         id: g.id || `${p.teamId || d.id}_${g.name || 'group'}`,
-                        name: g.name || p.teamName || 'Group',
+                        name: g.name || resolveTeamName(p) || 'Group',
                         chestNumber: '—',
                         teamId: p.teamId || '',
-                        teamName: p.teamName || ''
+                        teamName: resolveTeamName(p) || ''
                     });
                 });
             } else {
                 list.push({
                     id: p.teamId || d.id,
-                    name: p.teamName || 'Team',
+                    name: resolveTeamName(p) || 'Team',
                     chestNumber: '—',
                     teamId: p.teamId || '',
-                    teamName: p.teamName || ''
+                    teamName: resolveTeamName(p) || ''
                 });
             }
         } else {
@@ -677,7 +691,7 @@ async function loadStudentsForProgram(prog) {
                 name: liveStudent ? liveStudent.name : (p.studentName || '—'),
                 chestNumber: chestNumber || '—',
                 teamId: p.teamId || '',
-                teamName: p.teamName || ''
+                teamName: resolveTeamName(p) || ''
             });
         }
     });
@@ -1142,7 +1156,7 @@ function openParticipantLetterModal(modalBody, modal, prog, activeJudges, partic
     const letterPool = getProgramLetterPool(participants.length);
 
     // Extract unique teams for Quick Filter
-    const uniqueTeams = Array.from(new Set(participants.map(p => p.teamName).filter(Boolean))).sort();
+    const uniqueTeams = Array.from(new Set(participants.map(p => resolveTeamName(p)).filter(Boolean))).sort();
     const teamOptionsHTML = uniqueTeams.map(t => `<option value="${window.escapeHTML(t)}">${window.escapeHTML(t)}</option>`).join('');
 
     // Generate Desktop Rows
@@ -1151,10 +1165,10 @@ function openParticipantLetterModal(modalBody, modal, prog, activeJudges, partic
         const codeLetter = (saved.codeLetter || '').toUpperCase();
         const hasLetter = codeLetter !== '';
         const isBtnDisabled = hasLetter || isPublished;
-        const searchText = `${p.chestNumber} ${p.name} ${p.teamName || ''}`.toLowerCase();
+        const searchText = `${p.chestNumber} ${p.name} ${resolveTeamName(p) || ''}`.toLowerCase();
         
         return `
-            <tr class="pw-letter-row" data-student-id="${p.id}" data-team="${window.escapeHTML(p.teamName || '')}" data-search-text="${window.escapeHTML(searchText)}">
+            <tr class="pw-letter-row" data-student-id="${p.id}" data-team="${window.escapeHTML(resolveTeamName(p) || '')}" data-search-text="${window.escapeHTML(searchText)}">
                 <td style="padding:0.35rem 0.65rem; font-weight:800; color:#64756A; width:80px; font-size:0.82rem;">
                     ${window.escapeHTML(p.chestNumber)}
                 </td>
@@ -1162,7 +1176,7 @@ function openParticipantLetterModal(modalBody, modal, prog, activeJudges, partic
                     ${window.escapeHTML(p.name)}
                 </td>
                 <td style="padding:0.35rem 0.65rem; font-weight:600; color:#64756A; font-size:0.8rem;">
-                    ${window.escapeHTML(p.teamName || '—')}
+                    ${window.escapeHTML(resolveTeamName(p) || '—')}
                 </td>
                 <td style="padding:0.35rem 0.65rem; text-align:center; width:80px;">
                     <div class="letter-badge-display" data-student-id="${p.id}" style="${hasLetter ? 'background:#e0e7ff; color:#064E3B; border:1px solid #ECFDF5;' : 'background:#ECFDF5; color:#64756A; border:1px solid #D8E8DE;'} min-width:32px; height:30px; border-radius:6px; font-weight:800; font-size:0.88rem; display:inline-flex; align-items:center; justify-content:center;">
@@ -1187,10 +1201,10 @@ function openParticipantLetterModal(modalBody, modal, prog, activeJudges, partic
         const codeLetter = (saved.codeLetter || '').toUpperCase();
         const hasLetter = codeLetter !== '';
         const isBtnDisabled = hasLetter || isPublished;
-        const searchText = `${p.chestNumber} ${p.name} ${p.teamName || ''}`.toLowerCase();
+        const searchText = `${p.chestNumber} ${p.name} ${resolveTeamName(p) || ''}`.toLowerCase();
 
         return `
-            <div class="pw-letter-card" data-student-id="${p.id}" data-team="${window.escapeHTML(p.teamName || '')}" data-search-text="${window.escapeHTML(searchText)}"
+            <div class="pw-letter-card" data-student-id="${p.id}" data-team="${window.escapeHTML(resolveTeamName(p) || '')}" data-search-text="${window.escapeHTML(searchText)}"
                 style="background:#fff; border:1px solid #D8E8DE; border-radius:10px; padding:0.65rem 0.85rem; display:flex; flex-direction:column; gap:0.4rem; box-shadow:0 1px 2px rgba(0,0,0,0.02);">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span style="font-weight:800; color:#64756A; font-size:0.8rem; background:#ECFDF5; padding:0.15rem 0.5rem; border-radius:4px; border:1px solid #D8E8DE;">
@@ -1202,7 +1216,7 @@ function openParticipantLetterModal(modalBody, modal, prog, activeJudges, partic
                 </div>
                 <div>
                     <div style="font-weight:700; color:#17251B; font-size:0.9rem;">${window.escapeHTML(p.name)}</div>
-                    <div style="font-size:0.78rem; color:#64756A; margin-top:0.1rem;">Team: <strong>${window.escapeHTML(p.teamName || '—')}</strong></div>
+                    <div style="font-size:0.78rem; color:#64756A; margin-top:0.1rem;">Team: <strong>${window.escapeHTML(resolveTeamName(p) || '—')}</strong></div>
                 </div>
                 <div style="text-align:right; margin-top:0.2rem;">
                     <button type="button" class="btn btn-sm btn-pw-generate" data-student-id="${p.id}"
@@ -1600,7 +1614,7 @@ async function autoSaveBulkParticipantLetters(prog, assignmentMap, existingResul
                     groupId: isGroup ? p.id : '',
                     studentName: p.name || '',
                     teamId: p.teamId || '',
-                    teamName: p.teamName || '',
+                    teamName: resolveTeamName(p) || '',
                     codeLetter: codeLetter,
                     marks: [],
                     finalMark: 0,
@@ -1794,7 +1808,7 @@ async function autoSaveParticipantLetter(prog, studentId, codeLetter, existingRe
                 groupId: isGroup ? studentId : '',
                 studentName: pInfo ? pInfo.name : '',
                 teamId: pInfo ? pInfo.teamId : '',
-                teamName: pInfo ? pInfo.teamName : '',
+                teamName: pInfo ? resolveTeamName(pInfo) : '',
                 codeLetter: codeLetter,
                 marks: [],
                 finalMark: 0,
@@ -1929,7 +1943,7 @@ function renderSpreadsheetUI(modalBody, modal, prog, judges, participants, _lega
         }
 
         return `
-            <tr class="mark-entry-row" data-student-id="${p.id}" data-student-name="${window.escapeHTML(p.name)}" data-team-id="${p.teamId}" data-team-name="${window.escapeHTML(p.teamName)}" data-manual-grade="${window.escapeHTML(screenManualGrade)}" data-judge-manual-grades="${window.escapeHTML(JSON.stringify(manualGrades))}">
+            <tr class="mark-entry-row" data-student-id="${p.id}" data-student-name="${window.escapeHTML(p.name)}" data-team-id="${p.teamId}" data-team-name="${window.escapeHTML(resolveTeamName(p))}" data-manual-grade="${window.escapeHTML(screenManualGrade)}" data-judge-manual-grades="${window.escapeHTML(JSON.stringify(manualGrades))}">
                 <td style="padding:0.4rem 0.5rem; border:1px solid #D8E8DE; text-align:center; white-space:nowrap;">
                     <div style="display:inline-flex; align-items:center; gap:4px; justify-content:center;">
                         <input type="text" class="form-input code-letter-input" 
@@ -2637,7 +2651,7 @@ async function persistMarks(prog, judges, isSubmit) {
                             groupId: isGroup ? (r.groupId || '') : '',
                             studentName: r.studentName || '',
                             teamId: r.teamId || '',
-                            teamName: r.teamName || '',
+                            teamName: resolveTeamName(r) || '',
                             position: r.position || '',
                             grade: r.grade || '',
                             manualGrade: r.manualGrade || null,
@@ -2812,7 +2826,7 @@ async function persistMarks(prog, judges, isSubmit) {
                         groupId: isGroup ? (r.groupId || '') : '',
                         studentName: r.studentName || '',
                         teamId: r.teamId || '',
-                        teamName: r.teamName || '',
+                        teamName: resolveTeamName(r) || '',
                         position: r.position || '',
                         grade: r.grade || '',
                         manualGrade: r.manualGrade || null,
@@ -2982,7 +2996,7 @@ async function saveJudgeAssignment(prog, selectedJudgeNames, activeJudges, exist
                 groupId: isGroup ? p.id : '',
                 studentName: p.name || '',
                 teamId: p.teamId || '',
-                teamName: p.teamName || '',
+                teamName: resolveTeamName(p) || '',
                 codeLetter: codeLetter,
                 marks: marks,
                 finalMark: 0,
