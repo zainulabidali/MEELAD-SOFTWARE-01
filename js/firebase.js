@@ -243,9 +243,10 @@ async function _performUpdateDashboardMetadata(instituteId) {
         const teamMap = new Map(teams.map(t => [t.id, t]));
 
         // 2. Real-time Live Team Leaderboard
-        const teamPoints = new Map();
+        // FIX: aggregate by String(teamId) — not teamName — so renames don't cause stale keys
+        const teamPoints = new Map(); // key = String(teamId)
         teams.forEach(t => {
-            if (t.name) teamPoints.set(t.name, 0);
+            if (t.id) teamPoints.set(String(t.id), 0);
         });
 
         results.forEach(r => {
@@ -255,25 +256,31 @@ async function _performUpdateDashboardMetadata(instituteId) {
 
                 if (Array.isArray(r.marksData) && r.marksData.length > 0) {
                     r.marksData.forEach(w => {
-                        if (w.teamId && w.teamId !== 'teamless' && w.teamName && w.teamName !== 'No Team' && w.totalPoints > 0) {
-                            const current = teamPoints.get(w.teamName) || 0;
-                            teamPoints.set(w.teamName, current + (w.totalPoints || 0));
+                        if (w.teamId && w.teamId !== 'teamless' && w.totalPoints > 0) {
+                            const tid = String(w.teamId);
+                            const current = teamPoints.get(tid) || 0;
+                            teamPoints.set(tid, current + (w.totalPoints || 0));
                         }
                     });
                 } else if (Array.isArray(r.winners)) {
                     r.winners.forEach(w => {
-                        if (w.teamId && w.teamId !== 'teamless' && w.teamName && w.teamName !== 'No Team') {
-                            const current = teamPoints.get(w.teamName) || 0;
-                            teamPoints.set(w.teamName, current + (w.marks || 0));
+                        if (w.teamId && w.teamId !== 'teamless') {
+                            const tid = String(w.teamId);
+                            const current = teamPoints.get(tid) || 0;
+                            teamPoints.set(tid, current + (w.marks || 0));
                         }
                     });
                 }
             }
         });
 
+        // Resolve current team names from freshly-fetched teams collection
         const sortedTeams = [...teamPoints.entries()]
             .sort((a, b) => b[1] - a[1])
-            .map(([name, points]) => ({ name, points }));
+            .map(([tid, points]) => {
+                const t = teamMap.get(tid);
+                return { id: tid, name: t?.name || '—', points };
+            });
 
         // 3. Radar Chart (Participants By Team)
         const teamCounts = new Map();
@@ -340,9 +347,10 @@ async function _performUpdateDashboardMetadata(instituteId) {
         const publishedCount = results.filter(r => r.status === 'published').length;
 
         // 5. Category Performance Aggregation
-        const teamSet = new Set();
-        teams.forEach(t => { if (t.name) teamSet.add(t.name); });
-        const categoryMap = {};
+        // FIX: aggregate by String(teamId) — not teamName — to survive renames
+        const teamIdSet = new Set(); // tracks all teamIds that have points
+        teams.forEach(t => { if (t.id) teamIdSet.add(String(t.id)); });
+        const categoryMap = {}; // { [catName]: { [teamId]: points } }
         const processedProgramIds = new Set();
 
         results.forEach(r => {
@@ -361,18 +369,20 @@ async function _performUpdateDashboardMetadata(instituteId) {
 
             if (Array.isArray(r.marksData) && r.marksData.length > 0) {
                 r.marksData.forEach(w => {
-                    if (w.teamName && w.teamName !== 'No Team' && w.totalPoints > 0) {
+                    if (w.teamId && w.teamId !== 'teamless' && w.totalPoints > 0) {
+                        const tid = String(w.teamId);
                         const pts = Number(w.totalPoints || 0);
-                        categoryMap[catName][w.teamName] = (categoryMap[catName][w.teamName] || 0) + pts;
-                        teamSet.add(w.teamName);
+                        categoryMap[catName][tid] = (categoryMap[catName][tid] || 0) + pts;
+                        teamIdSet.add(tid);
                     }
                 });
             } else if (Array.isArray(r.winners)) {
                 r.winners.forEach(w => {
-                    if (w.teamName && w.teamName !== 'No Team' && w.marks > 0) {
+                    if (w.teamId && w.teamId !== 'teamless' && w.marks > 0) {
+                        const tid = String(w.teamId);
                         const pts = Number(w.marks || 0);
-                        categoryMap[catName][w.teamName] = (categoryMap[catName][w.teamName] || 0) + pts;
-                        teamSet.add(w.teamName);
+                        categoryMap[catName][tid] = (categoryMap[catName][tid] || 0) + pts;
+                        teamIdSet.add(tid);
                     }
                 });
             }
@@ -383,10 +393,15 @@ async function _performUpdateDashboardMetadata(instituteId) {
 
         const categoryPerformance = categoryNames.map(catName => {
             const teamScoresObj = categoryMap[catName] || {};
-            const teamList = Array.from(teamSet).map(name => ({
-                name: name,
-                points: teamScoresObj[name] || 0
-            }));
+            // Resolve current team name from freshly-fetched teams; exactly one entry per teamId
+            const teamList = Array.from(teamIdSet).map(tid => {
+                const t = teamMap.get(tid);
+                return {
+                    id: tid,
+                    name: t?.name || '—',
+                    points: teamScoresObj[tid] || 0
+                };
+            });
             teamList.sort((a, b) => b.points - a.points);
             computeDenseRanking(teamList, t => t.points, 'rank');
 
@@ -423,13 +438,17 @@ async function _performUpdateDashboardMetadata(instituteId) {
                 const sorted = [...r.marksData].sort((a, b) => (b.totalPoints || 0) - (a.totalPoints || 0));
                 if (sorted[0]) {
                     topWinnerName = sorted[0].studentName || 'Winner';
-                    topTeamName = sorted[0].teamName || '';
+                    // FIX: resolve team name from authoritative teams collection via teamId
+                    const topTeam = sorted[0].teamId ? teamMap.get(String(sorted[0].teamId)) : null;
+                    topTeamName = topTeam?.name || sorted[0].teamName || '';
                 }
             } else if (Array.isArray(r.winners) && r.winners.length > 0) {
                 const sorted = [...r.winners].sort((a, b) => (b.marks || 0) - (a.marks || 0));
                 if (sorted[0]) {
                     topWinnerName = sorted[0].name || sorted[0].studentName || 'Winner';
-                    topTeamName = sorted[0].teamName || '';
+                    // FIX: resolve team name from authoritative teams collection via teamId
+                    const topTeam = sorted[0].teamId ? teamMap.get(String(sorted[0].teamId)) : null;
+                    topTeamName = topTeam?.name || sorted[0].teamName || '';
                 }
             }
 

@@ -478,7 +478,7 @@
             position: relative;
             overflow: hidden;
             margin: auto;
-            border-radius: 30px;
+            border-radius: 0;
             flex-shrink: 0;
             background-size: cover;
             background-position: center;
@@ -499,7 +499,7 @@
             height: 100%;
             background: linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.3) 100%);
             pointer-events: none;
-            border-radius: 30px;
+            border-radius: 0;
             z-index: 1;
         }
 
@@ -1087,7 +1087,7 @@
         .mini-poster-preview {
             width: 160px;
             height: 200px;
-            border-radius: 16px;
+            border-radius: 0;
             position: relative;
             overflow: hidden;
             background-size: cover;
@@ -4147,6 +4147,17 @@
                     </div>
                 </div>
 
+                <!-- Gender Filter Custom Dropdown -->
+                <div class="glass-select-container disabled" id="genderFilterContainer">
+                    <div class="glass-select-trigger" id="genderSelectTrigger">
+                        <span class="glass-select-text" id="genderSelectedVal">Select Gender</span>
+                        <span class="glass-select-arrow">▼</span>
+                    </div>
+                    <div class="glass-select-panel" id="genderSelectPanel">
+                        <!-- Dynamic List Items -->
+                    </div>
+                </div>
+
                 <!-- Program Filter Custom Dropdown -->
                 <div class="glass-select-container disabled" id="progFilterContainer">
                     <div class="glass-select-trigger" id="progSelectTrigger">
@@ -4223,6 +4234,12 @@
                     <span class="app-select-chevron">▼</span>
                 </div>
 
+                <div class="app-select-trigger disabled" id="mobGenderSelectTrigger">
+                    <span class="app-select-icon">👥</span>
+                    <span class="app-select-value" id="mobGenderSelectedVal">Select Gender</span>
+                    <span class="app-select-chevron">▼</span>
+                </div>
+
                 <div class="app-select-trigger disabled" id="mobProgSelectTrigger">
                     <span class="app-select-icon">📖</span>
                     <span class="app-select-value" id="mobProgSelectedVal">Select Program</span>
@@ -4275,6 +4292,21 @@
                     </div>
                     <div class="bottom-sheet-body" id="mobCatOptionsList">
                         <!-- Categories dynamic items -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gender Bottom Sheet -->
+            <div class="bottom-sheet" id="mobGenderBottomSheet">
+                <div class="bottom-sheet-overlay" id="mobGenderOverlay"></div>
+                <div class="bottom-sheet-panel">
+                    <div class="bottom-sheet-drag-handle"></div>
+                    <div class="bottom-sheet-header">
+                        <h3 class="bottom-sheet-title">Select Gender</h3>
+                        <button class="bottom-sheet-close" id="mobGenderCloseBtn">&times;</button>
+                    </div>
+                    <div class="bottom-sheet-body" id="mobGenderOptionsList">
+                        <!-- Gender dynamic items -->
                     </div>
                 </div>
             </div>

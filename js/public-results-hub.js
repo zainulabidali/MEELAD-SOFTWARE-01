@@ -36,6 +36,7 @@ let publishedResultsList = []; // All published result docs
 let categoriesList = [];
 
 let selectedCategory = '';
+let selectedGender = '';
 let selectedProgramId = '';
 
 // Helper: Escape HTML
@@ -76,6 +77,7 @@ function loadCachedHubData() {
 
         updateHeader();
         populateCategorySelect();
+        populateGenderSelect();
         populateProgramSelect();
         updateSummaryStats();
         renderTeamChampionship();
@@ -189,15 +191,69 @@ function populateCategorySelect() {
     const select = document.getElementById('hubCategorySelect');
     if (!select) return;
 
-    const catSet = new Set();
+    const catMap = new Map();
+    
+    // Primary Source: Dashboard Data (Contains all categories in the system)
+    if (categoryPerformanceData && categoryPerformanceData.length > 0) {
+        categoryPerformanceData.forEach(c => {
+            if (c.categoryName) {
+                const lower = c.categoryName.trim().toLowerCase();
+                if (!catMap.has(lower)) catMap.set(lower, c.categoryName.trim());
+            }
+        });
+    }
+
+    // Secondary Source: Published Results (Fallback)
     publishedResultsList.forEach(r => {
-        if (r.categoryName) catSet.add(r.categoryName);
+        const name = r.categoryName || r.category;
+        if (name) {
+            const lower = name.trim().toLowerCase();
+            if (!catMap.has(lower)) catMap.set(lower, name.trim());
+        }
     });
 
-    categoriesList = Array.from(catSet).sort();
+    categoriesList = Array.from(catMap.values()).sort();
 
     select.innerHTML = '<option value="">All Categories</option>' +
         categoriesList.map(cat => `<option value="${escapeHTML(cat)}" ${selectedCategory === cat ? 'selected' : ''}>${escapeHTML(cat)}</option>`).join('');
+}
+
+function populateGenderSelect() {
+    const select = document.getElementById('hubGenderSelect');
+    if (!select) return;
+
+    if (!selectedCategory) {
+        select.innerHTML = '<option value="">All Genders</option>';
+        selectedGender = '';
+        return;
+    }
+
+    const genderSet = new Set();
+    const selCatLower = selectedCategory.trim().toLowerCase();
+    
+    console.log("--- DATA FLOW AUDIT: GENDER EXTRACTION ---");
+    console.log("Selected category:", selectedCategory);
+    console.log("selCatLower:", selCatLower);
+    
+    const categoryPrograms = [];
+
+    publishedResultsList.forEach(r => {
+        const rCatLower = (r.categoryName || r.category || '').trim().toLowerCase();
+        if (rCatLower === selCatLower) {
+            categoryPrograms.push(r);
+            const gender = r.genderCategory || 'Mixed';
+            genderSet.add(gender);
+        }
+    });
+
+    console.log("Category programs matching", selCatLower, ":", categoryPrograms);
+    console.log("Category program count:", categoryPrograms.length);
+    console.log("Extracted genderSet:", Array.from(genderSet));
+
+    const gendersList = Array.from(genderSet).sort();
+
+    select.innerHTML = '<option value="">All Genders</option>' +
+        gendersList.map(g => `<option value="${escapeHTML(g)}" ${selectedGender === g ? 'selected' : ''}>${escapeHTML(g)}</option>`).join('');
 }
 
 function populateProgramSelect() {
@@ -207,13 +263,21 @@ function populateProgramSelect() {
     let filtered = publishedResultsList;
 
     if (selectedCategory) {
-        filtered = filtered.filter(r => r.categoryName === selectedCategory);
+        const selCatLower = selectedCategory.trim().toLowerCase();
+        filtered = filtered.filter(r => {
+            const rCatLower = (r.categoryName || r.category || '').trim().toLowerCase();
+            return rCatLower === selCatLower;
+        });
+    }
+    
+    if (selectedGender) {
+        filtered = filtered.filter(r => (r.genderCategory || 'Mixed') === selectedGender);
     }
 
     select.innerHTML = '<option value="">All Programs</option>' +
         filtered.map(r => {
             const progNum = r.programCode || r.programNumber ? `#${r.programCode || r.programNumber} - ` : '';
-            return `<option value="${r.id}" ${selectedProgramId === r.id ? 'selected' : ''}>${progNum}${escapeHTML(r.programName || 'Program')} (${escapeHTML(r.categoryName || '')})</option>`;
+            return `<option value="${r.id}" ${selectedProgramId === r.id ? 'selected' : ''}>${progNum}${escapeHTML(r.programName || 'Program')} - ${escapeHTML(r.genderCategory || 'Mixed')}</option>`;
         }).join('');
 }
 
@@ -585,7 +649,7 @@ async function initPublicResultsHub() {
 
         onSnapshot(pubQuery, (querySnap) => {
             publishedResultsList = querySnap.docs.map(d => ({ id: d.id, ...d.data() }))
-                .filter(r => r.publicDisabled !== true && r.publicReleased === true);
+                .filter(r => r.publicDisabled !== true);
 
             publishedResultsList.sort((a, b) => {
                 const tA = a.publishedAt?.seconds || 0;
@@ -593,7 +657,23 @@ async function initPublicResultsHub() {
                 return tB - tA;
             });
 
+            console.log("--- DATA FLOW AUDIT: LOADED PROGRAMS ---");
+            console.log("Loaded program objects (first 10):", publishedResultsList.slice(0, 10));
+            console.table(
+                publishedResultsList.map(p => ({
+                    id: p.id || p.programId,
+                    name: p.name || p.programName,
+                    categoryName: p.categoryName,
+                    category: p.category,
+                    genderCategory: p.genderCategory,
+                    gender: p.gender,
+                    publicReleased: p.publicReleased,
+                    publicDisabled: p.publicDisabled
+                }))
+            );
+
             populateCategorySelect();
+            populateGenderSelect();
             populateProgramSelect();
             updateSummaryStats();
             if (selectedProgramId) renderProgramResultCard();
@@ -604,14 +684,28 @@ async function initPublicResultsHub() {
         console.error("Error loading published results:", e);
     }
 
-    // Bind Category & Program Selectors
+    // Bind Category, Gender & Program Selectors
     const catSelect = document.getElementById('hubCategorySelect');
+    const genderSelect = document.getElementById('hubGenderSelect');
     const progSelect = document.getElementById('hubProgramSelect');
 
     if (catSelect) {
         catSelect.addEventListener('change', (e) => {
             selectedCategory = e.target.value;
+            selectedGender = ''; // Reset gender when category changes
+            selectedProgramId = ''; // Reset program when category changes
+            populateGenderSelect();
             populateProgramSelect();
+            renderProgramResultCard(); // Refresh results to hide or update
+        });
+    }
+
+    if (genderSelect) {
+        genderSelect.addEventListener('change', (e) => {
+            selectedGender = e.target.value;
+            selectedProgramId = ''; // Reset program when gender changes
+            populateProgramSelect();
+            renderProgramResultCard(); // Refresh results to hide or update
         });
     }
 

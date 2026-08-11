@@ -26,6 +26,20 @@ let leaderboardData = [];
 let cachedCategoryPerformance = null;
 let isCategoryPerformanceStale = true;
 
+// FIX: module-level teamId → team lookup — authoritative source for current names
+// Built from leaderboardData (which includes id fields from the fixed firebase.js)
+let teamsById = new Map();
+
+/** Rebuild teamsById from leaderboardData. Call whenever leaderboardData changes. */
+function rebuildTeamsById() {
+    teamsById = new Map();
+    if (Array.isArray(leaderboardData)) {
+        leaderboardData.forEach(t => {
+            if (t.id) teamsById.set(String(t.id), t);
+        });
+    }
+}
+
 function getEffectiveEventName() {
     return eventConfig?.eventName || instituteDetails?.name || "Results Portal";
 }
@@ -355,14 +369,18 @@ function prepareCategoryPerformanceData() {
         return cachedCategoryPerformance;
     }
 
-    // 1. Identify all teams across the portal (leaderboardData and allResults)
-    const teamSet = new Set();
+    // teamsById is the module-level Map, rebuilt by rebuildTeamsById() on every metadata update.
+    // It maps String(teamId) → { id, name, points } using fresh data from the teams collection.
+
+    // Build teamIdSet for category performance (identity = teamId)
+    const teamIdSet = new Set();
+    // Seed from leaderboard (all teams that have points)
     if (Array.isArray(leaderboardData)) {
-        leaderboardData.forEach(t => { if (t.name) teamSet.add(t.name); });
+        leaderboardData.forEach(t => { if (t.id) teamIdSet.add(String(t.id)); });
     }
 
-    // 2. Accumulate points per category per team using exact Team Championship calculation
-    const categoryMap = {}; // { [catName]: { [teamName]: points } }
+    // 3. Accumulate points per category per teamId
+    const categoryMap = {}; // { [catName]: { [teamId]: points } }
     const processedProgramIds = new Set();
 
     allResults.forEach(r => {
@@ -384,18 +402,21 @@ function prepareCategoryPerformanceData() {
 
         if (Array.isArray(r.marksData) && r.marksData.length > 0) {
             r.marksData.forEach(w => {
-                if (w.teamId && w.teamId !== 'teamless' && w.teamName && w.teamName !== 'No Team' && w.totalPoints > 0) {
+                // FIX: aggregate by teamId — not teamName
+                if (w.teamId && w.teamId !== 'teamless' && w.totalPoints > 0) {
+                    const tid = String(w.teamId);
                     const pts = Number(w.totalPoints || 0);
-                    categoryMap[catName][w.teamName] = (categoryMap[catName][w.teamName] || 0) + pts;
-                    teamSet.add(w.teamName);
+                    categoryMap[catName][tid] = (categoryMap[catName][tid] || 0) + pts;
+                    teamIdSet.add(tid);
                 }
             });
         } else if (Array.isArray(r.winners)) {
             r.winners.forEach(w => {
-                if (w.teamId && w.teamId !== 'teamless' && w.teamName && w.teamName !== 'No Team' && w.marks > 0) {
+                if (w.teamId && w.teamId !== 'teamless' && w.marks > 0) {
+                    const tid = String(w.teamId);
                     const pts = Number(w.marks || 0);
-                    categoryMap[catName][w.teamName] = (categoryMap[catName][w.teamName] || 0) + pts;
-                    teamSet.add(w.teamName);
+                    categoryMap[catName][tid] = (categoryMap[catName][tid] || 0) + pts;
+                    teamIdSet.add(tid);
                 }
             });
         }
@@ -428,37 +449,43 @@ function prepareCategoryPerformanceData() {
     });
 
     // Assign consistent color mapping for each team across all categories
-    const allTeamsSorted = Array.from(teamSet).sort();
+    const allTeamsSorted = Array.from(teamIdSet).sort();
     const teamColorsPalette = [
-        'linear-gradient(90deg, #3b82f6, #1d4ed8)', // Blue
-        'linear-gradient(90deg, #059669, #047857)', // Emerald / Green
-        'linear-gradient(90deg, #F59E0B, #F59E0B)', // Amber / Orange
-        'linear-gradient(90deg, #059669, #065F46)', // Purple / Violet
-        'linear-gradient(90deg, #ec4899, #be185d)', // Pink
-        'linear-gradient(90deg, #06b6d4, #0891b2)', // Cyan
-        'linear-gradient(90deg, #059669, #065F46)', // Indigo
-        'linear-gradient(90deg, #f43f5e, #e11d48)', // Rose
-        'linear-gradient(90deg, #14b8a6, #0f766e)', // Teal
-        'linear-gradient(90deg, #84cc16, #65a30d)'  // Lime
+        'linear-gradient(90deg, #3b82f6, #1d4ed8)',
+        'linear-gradient(90deg, #059669, #047857)',
+        'linear-gradient(90deg, #F59E0B, #F59E0B)',
+        'linear-gradient(90deg, #059669, #065F46)',
+        'linear-gradient(90deg, #ec4899, #be185d)',
+        'linear-gradient(90deg, #06b6d4, #0891b2)',
+        'linear-gradient(90deg, #059669, #065F46)',
+        'linear-gradient(90deg, #f43f5e, #e11d48)',
+        'linear-gradient(90deg, #14b8a6, #0f766e)',
+        'linear-gradient(90deg, #84cc16, #65a30d)'
     ];
 
+    // Color map keyed by teamId for consistency
     const teamColorMap = {};
-    allTeamsSorted.forEach((teamName, idx) => {
-        teamColorMap[teamName] = teamColorsPalette[idx % teamColorsPalette.length];
+    allTeamsSorted.forEach((tid, idx) => {
+        teamColorMap[tid] = teamColorsPalette[idx % teamColorsPalette.length];
     });
 
     // Prepare complete structured category performance data
     cachedCategoryPerformance = categoryNames.map(catName => {
         const teamScoresObj = categoryMap[catName] || {};
 
-        // Include ALL teams (even 0 point teams) so public sees full comparison
-        const teamList = Array.from(teamSet).map(name => ({
-            name: name,
-            points: teamScoresObj[name] || 0,
-            color: teamColorMap[name] || 'linear-gradient(90deg, #3b82f6, #1d4ed8)'
-        }));
+        // Resolve current team name from teamsById; exactly one entry per teamId
+        const teamList = Array.from(teamIdSet).map(tid => {
+            const t = teamsById.get(tid);
+            const name = t?.name || '—';
+            return {
+                id: tid,
+                name: name,
+                points: teamScoresObj[tid] || 0,
+                color: teamColorMap[tid] || 'linear-gradient(90deg, #3b82f6, #1d4ed8)'
+            };
+        });
 
-        // Sort teams inside category from highest points to lowest points (0 points at bottom)
+        // Sort teams inside category from highest points to lowest
         teamList.sort((a, b) => b.points - a.points);
 
         const maxPoints = Math.max(...teamList.map(t => t.points), 1);
@@ -744,6 +771,8 @@ async function init() {
             } else {
                 leaderboardData = [];
             }
+            // FIX: rebuild the teamId lookup whenever leaderboard data updates
+            rebuildTeamsById();
             isCategoryPerformanceStale = true;
             updateTeamChampionship();
         }, (err) => {
@@ -833,13 +862,20 @@ function hideOverlay() {
 // ─────────────────────────────────────────────
 // State variables for selected filter options
 let selectedCategory = "";
-let selectedProgram = "";
+let selectedGender = "";
+let selectedProgramId = "";
+let selectedProgramName = "";
 
 function setupFilters() {
     const catContainer = document.getElementById('catFilterContainer');
     const catTrigger = document.getElementById('catSelectTrigger');
     const catText = document.getElementById('catSelectedVal');
     const catPanel = document.getElementById('catSelectPanel');
+
+    const genderContainer = document.getElementById('genderFilterContainer');
+    const genderTrigger = document.getElementById('genderSelectTrigger');
+    const genderText = document.getElementById('genderSelectedVal');
+    const genderPanel = document.getElementById('genderSelectPanel');
 
     const progContainer = document.getElementById('progFilterContainer');
     const progTrigger = document.getElementById('progSelectTrigger');
@@ -854,6 +890,13 @@ function setupFilters() {
     const mobCatCloseBtn = document.getElementById('mobCatCloseBtn');
     const mobCatList = document.getElementById('mobCatOptionsList');
 
+    const mobGenderTrigger = document.getElementById('mobGenderSelectTrigger');
+    const mobGenderText = document.getElementById('mobGenderSelectedVal');
+    const mobGenderSheet = document.getElementById('mobGenderBottomSheet');
+    const mobGenderOverlay = document.getElementById('mobGenderOverlay');
+    const mobGenderCloseBtn = document.getElementById('mobGenderCloseBtn');
+    const mobGenderList = document.getElementById('mobGenderOptionsList');
+
     const mobProgTrigger = document.getElementById('mobProgSelectTrigger');
     const mobProgText = document.getElementById('mobProgSelectedVal');
     const mobProgSheet = document.getElementById('mobProgBottomSheet');
@@ -863,9 +906,18 @@ function setupFilters() {
 
     // Reset options
     selectedCategory = "";
-    selectedProgram = "";
+    selectedGender = "";
+    selectedProgramId = "";
+    selectedProgramName = "";
     catText.textContent = "Select Category";
     catText.classList.add('placeholder');
+    if (genderText) {
+        genderText.textContent = "Select Gender";
+        genderText.classList.add('placeholder');
+    }
+    if (genderContainer) {
+        genderContainer.classList.add('disabled');
+    }
     progText.textContent = "Select Program";
     progText.classList.add('placeholder');
     progContainer.classList.add('disabled');
@@ -873,6 +925,13 @@ function setupFilters() {
     if (mobCatText) {
         mobCatText.textContent = "Select Category";
         mobCatText.style.color = '';
+    }
+    if (mobGenderText) {
+        mobGenderText.textContent = "Select Gender";
+        mobGenderText.style.color = '';
+    }
+    if (mobGenderTrigger) {
+        mobGenderTrigger.classList.add('disabled');
     }
     if (mobProgText) {
         mobProgText.textContent = "Select Program";
@@ -915,6 +974,14 @@ function setupFilters() {
         togglePanel(catContainer);
     };
 
+    if (genderTrigger) {
+        genderTrigger.onclick = (e) => {
+            e.stopPropagation();
+            if (genderContainer.classList.contains('disabled')) return;
+            togglePanel(genderContainer);
+        };
+    }
+
     progTrigger.onclick = (e) => {
         e.stopPropagation();
         if (progContainer.classList.contains('disabled')) return;
@@ -925,6 +992,15 @@ function setupFilters() {
         mobCatTrigger.onclick = () => openBottomSheet(mobCatSheet);
         mobCatOverlay.onclick = () => closeBottomSheet(mobCatSheet);
         mobCatCloseBtn.onclick = () => closeBottomSheet(mobCatSheet);
+    }
+
+    if (mobGenderTrigger && mobGenderSheet) {
+        mobGenderTrigger.onclick = () => {
+            if (mobGenderTrigger.classList.contains('disabled')) return;
+            openBottomSheet(mobGenderSheet);
+        };
+        mobGenderOverlay.onclick = () => closeBottomSheet(mobGenderSheet);
+        mobGenderCloseBtn.onclick = () => closeBottomSheet(mobGenderSheet);
     }
 
     if (mobProgTrigger && mobProgSheet) {
@@ -969,8 +1045,65 @@ function setupFilters() {
             mobCatText.style.color = '#17251B';
         }
 
+        // Reset gender
+        selectedGender = "";
+        if (genderText) {
+            genderText.textContent = "Select Gender";
+            genderText.classList.add('placeholder');
+        }
+        if (genderContainer) {
+            genderContainer.classList.remove('disabled');
+        }
+        
+        if (mobGenderText) {
+            mobGenderText.textContent = "Select Gender";
+            mobGenderText.style.color = '';
+        }
+        if (mobGenderTrigger) {
+            mobGenderTrigger.classList.remove('disabled');
+        }
+
         // Reset program
-        selectedProgram = "";
+        selectedProgramId = "";
+        selectedProgramName = "";
+        progText.textContent = "Select Program";
+        progText.classList.add('placeholder');
+        progContainer.classList.add('disabled');
+
+        if (mobProgText) {
+            mobProgText.textContent = "Select Program";
+            mobProgText.style.color = '';
+        }
+        if (mobProgTrigger) {
+            mobProgTrigger.classList.add('disabled');
+        }
+
+        populateCategories();
+        populateGenders();
+        populatePrograms();
+    };
+
+    const selectGender = (g) => {
+        selectedGender = g;
+
+        // Update Desktop
+        if (genderText) {
+            genderText.textContent = g;
+            genderText.classList.remove('placeholder');
+        }
+        if (genderContainer) {
+            genderContainer.classList.remove('open');
+        }
+
+        // Update Mobile
+        if (mobGenderText) {
+            mobGenderText.textContent = g;
+            mobGenderText.style.color = '#17251B';
+        }
+
+        // Reset program
+        selectedProgramId = "";
+        selectedProgramName = "";
         progText.textContent = "Select Program";
         progText.classList.add('placeholder');
         progContainer.classList.remove('disabled');
@@ -983,21 +1116,22 @@ function setupFilters() {
             mobProgTrigger.classList.remove('disabled');
         }
 
-        populateCategories();
+        populateGenders();
         populatePrograms();
     };
 
-    const selectProgram = (p) => {
-        selectedProgram = p;
+    const selectProgram = (pId, pName) => {
+        selectedProgramId = pId;
+        selectedProgramName = pName;
 
         // Desktop
-        progText.textContent = p;
+        progText.textContent = pName;
         progText.classList.remove('placeholder');
         progContainer.classList.remove('open');
 
         // Mobile
         if (mobProgText) {
-            mobProgText.textContent = p;
+            mobProgText.textContent = pName;
             mobProgText.style.color = '#17251B';
         }
 
@@ -1037,28 +1171,72 @@ function setupFilters() {
         });
     };
 
-    const populatePrograms = () => {
-        progPanel.innerHTML = '';
-        if (mobProgList) mobProgList.innerHTML = '';
+    const populateGenders = () => {
+        if (genderPanel) genderPanel.innerHTML = '';
+        if (mobGenderList) mobGenderList.innerHTML = '';
         if (!selectedCategory) return;
 
-        const programs = [...new Set(
+        const genders = [...new Set(
             allResults
                 .filter(r => r.categoryName === selectedCategory)
-                .map(r => r.programName)
+                .map(r => r.genderCategory || 'Mixed')
         )].sort();
 
-        programs.forEach(p => {
-            const isSelected = p === selectedProgram;
+        genders.forEach(g => {
+            const isSelected = g === selectedGender;
 
             // Desktop
             const item = document.createElement('div');
             item.className = `glass-select-item ${isSelected ? 'selected' : ''}`;
             let checkHTML = isSelected ? `<span class="glass-select-check">✓</span>` : '';
-            item.innerHTML = `<span>${escapeHTML(p)}</span>${checkHTML}`;
+            item.innerHTML = `<span>${escapeHTML(g)}</span>${checkHTML}`;
             item.onclick = (e) => {
                 e.stopPropagation();
-                selectProgram(p);
+                selectGender(g);
+            };
+            if (genderPanel) genderPanel.appendChild(item);
+
+            // Mobile
+            if (mobGenderList) {
+                const mobItem = document.createElement('div');
+                mobItem.className = `bottom-sheet-item ${isSelected ? 'selected' : ''}`;
+                let mobCheckHTML = isSelected ? `<span class="bottom-sheet-check">✓</span>` : '';
+                mobItem.innerHTML = `<span>${escapeHTML(g)}</span>${mobCheckHTML}`;
+                mobItem.onclick = () => {
+                    selectGender(g);
+                    closeBottomSheet(mobGenderSheet);
+                };
+                mobGenderList.appendChild(mobItem);
+            }
+        });
+    };
+
+    const populatePrograms = () => {
+        progPanel.innerHTML = '';
+        if (mobProgList) mobProgList.innerHTML = '';
+        if (!selectedCategory || !selectedGender) return;
+
+        const programs = allResults
+            .filter(r => r.categoryName === selectedCategory && (r.genderCategory || 'Mixed') === selectedGender)
+            .map(r => ({
+                id: r.id,
+                name: r.programName,
+                code: r.programCode || r.programNumber
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        programs.forEach(p => {
+            const isSelected = p.id === selectedProgramId;
+            const displayName = p.code ? `#${p.code} - ${p.name}` : p.name;
+
+            // Desktop
+            const item = document.createElement('div');
+            item.className = `glass-select-item ${isSelected ? 'selected' : ''}`;
+            let checkHTML = isSelected ? `<span class="glass-select-check">✓</span>` : '';
+            item.innerHTML = `<span>${escapeHTML(displayName)}</span>${checkHTML}`;
+            item.onclick = (e) => {
+                e.stopPropagation();
+                selectProgram(p.id, p.name);
             };
             progPanel.appendChild(item);
 
@@ -1067,9 +1245,9 @@ function setupFilters() {
                 const mobItem = document.createElement('div');
                 mobItem.className = `bottom-sheet-item ${isSelected ? 'selected' : ''}`;
                 let mobCheckHTML = isSelected ? `<span class="bottom-sheet-check">✓</span>` : '';
-                mobItem.innerHTML = `<span>${escapeHTML(p)}</span>${mobCheckHTML}`;
+                mobItem.innerHTML = `<span>${escapeHTML(displayName)}</span>${mobCheckHTML}`;
                 mobItem.onclick = () => {
-                    selectProgram(p);
+                    selectProgram(p.id, p.name);
                     closeBottomSheet(mobProgSheet);
                 };
                 mobProgList.appendChild(mobItem);
@@ -1084,12 +1262,12 @@ function setupFilters() {
     const executeSearch = (btn) => {
         if (btn.classList.contains('loading')) return;
 
-        if (!selectedCategory || !selectedProgram) {
-            showToast("⚠️ Please select both Category and Program!");
+        if (!selectedCategory || !selectedGender || !selectedProgramId) {
+            showToast("⚠️ Please select Category, Gender, and Program!");
             return;
         }
 
-        const searchKey = `${instId}_${selectedCategory}_${selectedProgram}`;
+        const searchKey = `${instId}_${selectedProgramId}`;
         const originalText = btn.innerHTML;
 
         if (activeResultKey === searchKey && activeResultUnsubscribe) {
@@ -1128,50 +1306,24 @@ function setupFilters() {
         }
         activeResultKey = "";
 
-        const matchedMeta = allResults.find(r => r.categoryName === selectedCategory && r.programName === selectedProgram);
-        if (!matchedMeta) {
-            btn.innerHTML = originalText;
-            btn.classList.remove('loading');
-            currentDisplayedResult = null;
-            renderEmpty("Result Not Found", "The requested program standings have not been published yet.");
-            return;
-        }
-
-        const resultsRef = collection(db, "institutes", instId, "results");
-        const q = query(
-            resultsRef,
-            where("status", "==", "published"),
-            where("categoryName", "==", matchedMeta.rawCategoryName || matchedMeta.categoryName),
-            where("programName", "==", matchedMeta.programName)
-        );
+        const resultRef = doc(db, "institutes", instId, "results", selectedProgramId);
 
         activeResultKey = searchKey;
-        activeResultUnsubscribe = onSnapshot(q, (snapshot) => {
+        activeResultUnsubscribe = onSnapshot(resultRef, (snapshot) => {
             btn.innerHTML = originalText;
             btn.classList.remove('loading');
 
-            if (snapshot.empty) {
+            if (!snapshot.exists() || snapshot.data().status !== "published") {
                 currentDisplayedResult = null;
                 renderEmpty("Result Not Found", "The requested program standings have not been published yet.");
                 return;
             }
 
-            const docs = snapshot.docs.map(d => {
-                const data = d.data();
-                if (data.categoryName) {
-                    data.categoryName = normalizeCategoryName(data.categoryName);
-                }
-                return { id: d.id, ...data };
-            });
-
-            // Sort by published timestamp descending for duplicate matching logic
-            docs.sort((a, b) => {
-                const timeA = a.publishedAt?.seconds || 0;
-                const timeB = b.publishedAt?.seconds || 0;
-                return timeB - timeA;
-            });
-
-            const targetResult = docs[0];
+            const data = snapshot.data();
+            if (data.categoryName) {
+                data.categoryName = normalizeCategoryName(data.categoryName);
+            }
+            const targetResult = { id: snapshot.id, ...data };
 
             if (!cardBgMap[targetResult.id]) {
                 const savedBg = localStorage.getItem(`melad_card_bg_${targetResult.id}`);
@@ -1223,6 +1375,11 @@ function getMiniPosterHTML(r, bgId, templateId, resultNumber, madrasaName) {
     const sortedWinners = activeWinners.filter(w => w.rank <= 3);
 
     const isGroup = r.programType === 'group' || (r.programType === 'general' && r.registrationType === 'group');
+
+    let genderHTML = '';
+    if (r.genderCategory && r.genderCategory.trim() !== '' && r.genderCategory.toLowerCase() !== 'mixed') {
+        genderHTML = ` <span style="font-size: 0.85em; opacity: 0.85; font-weight: 600;">&bull; ${escapeHTML(r.genderCategory.toUpperCase())}</span>`;
+    }
 
     if (templateId === 2) {
         const w1 = sortedWinners[0];
@@ -1285,7 +1442,7 @@ function getMiniPosterHTML(r, bgId, templateId, resultNumber, madrasaName) {
             <!-- Mini Bento Container -->
             <div style="position: absolute; top: 10px; bottom: 10px; left: 10px; right: 10px; background: rgba(255,255,255,0.06); border: 0.5px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; z-index: 2; box-sizing: border-box;">
                 <div style="text-align: center; line-height: 1.1;">
-                    <span style="font-size: 4px; color: #fbbf24; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">${escapeHTML(r.categoryName.toUpperCase())}</span>
+                    <span style="font-size: 4px; color: #fbbf24; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">${escapeHTML(r.categoryName.toUpperCase())}${genderHTML}</span>
                     <div style="font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; font-size: 6.5px; font-weight: 800; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase;">${escapeHTML(r.programName)}</div>
                     <div style="display: inline-block; background: rgba(255,255,255,0.08); border: 0.25px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 1px 3px; font-size: 3.5px; font-weight: 700; color: white; margin-top: 2px;">RESULT ${resultNumber}</div>
                 </div>
@@ -1304,10 +1461,11 @@ function getMiniPosterHTML(r, bgId, templateId, resultNumber, madrasaName) {
         const winnersHTML = sortedWinners.map((w) => {
             const rank = w.rank;
             const nameText = isGroup ? (w.studentName || 'TEAM A') : (w.studentName || '—');
-            const teamText = w.teamName || '—';
             const rankColors = { 1: '#fbbf24', 2: '#D8E8DE', 3: '#fdba74' };
             const rankColor = rankColors[rank] || '#ffffff';
             const rankLabel = rankLabels[rank] || `${rank}TH`;
+            // FIX: resolve current team name via teamId; fall back to stored teamName
+            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || w.teamName || '—';
 
             return `
                 <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 0.25px solid rgba(255,255,255,0.1); padding-bottom: 2px; box-sizing: border-box; width: 100%;">
@@ -1341,7 +1499,7 @@ function getMiniPosterHTML(r, bgId, templateId, resultNumber, madrasaName) {
                     <div style="display: flex; flex-direction: column; text-align: left; max-width: 70px; line-height: 1;">
                         <span style="font-size: 3px; font-weight: 700; color: rgba(255, 255, 255, 0.45); letter-spacing: 0.5px;">STANDINGS</span>
                         <div style="font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; font-size: 5px; font-weight: 800; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; margin-top: 1px;">${escapeHTML(r.programName)}</div>
-                        <span style="font-size: 3.5px; font-weight: 700; color: #fbbf24; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 1px;">${escapeHTML(r.categoryName)}</span>
+                        <span style="font-size: 3.5px; font-weight: 700; color: #fbbf24; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 1px;">${escapeHTML(r.categoryName)}${genderHTML}</span>
                     </div>
                     <div style="display: flex; flex-direction: column; align-items: center; gap: 1px;">
                         <svg style="width: 6px; height: 6px; color: #fbbf24; opacity: 0.85;" viewBox="0 0 24 24" fill="currentColor">
@@ -1368,10 +1526,11 @@ function getMiniPosterHTML(r, bgId, templateId, resultNumber, madrasaName) {
         const winnersHTML = sortedWinners.map((w) => {
             const rank = w.rank;
             const nameText = isGroup ? (w.studentName || 'TEAM A') : (w.studentName || '—');
-            const teamText = w.teamName || '—';
             const rankColors = { 1: '#fbbf24', 2: '#D8E8DE', 3: '#fdba74' };
             const rankColor = rankColors[rank] || '#ffffff';
             const rankLabel = rankLabels[rank] || `${rank}TH`;
+            // FIX: resolve current team name via teamId
+            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || w.teamName || '—';
 
             return `
                 <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255, 255, 255, 0.03); border: 0.25px solid rgba(255, 255, 255, 0.1); border-left: 1.5px solid ${rankColor}; border-radius: 4px; padding: 4px 6px; box-sizing: border-box; width: 100%;">
@@ -1406,7 +1565,7 @@ function getMiniPosterHTML(r, bgId, templateId, resultNumber, madrasaName) {
                         <div>
                             <span style="font-size: 3px; font-weight: 700; color: rgba(255, 255, 255, 0.45); letter-spacing: 0.3px; display: block;">OFFICIAL RESULT</span>
                             <div style="font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; font-size: 5px; font-weight: 800; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; margin-top: 1px;">${escapeHTML(r.programName)}</div>
-                            <span style="font-size: 3.5px; font-weight: 700; color: #fbbf24; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 1px; display: block;">${escapeHTML(r.categoryName)}</span>
+                            <span style="font-size: 3.5px; font-weight: 700; color: #fbbf24; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 1px; display: block;">${escapeHTML(r.categoryName)}${genderHTML}</span>
                             <div style="display: inline-block; border: 0.25px solid rgba(255, 255, 255, 0.25); border-radius: 2px; padding: 1px 3px; font-size: 3px; font-weight: 800; color: rgba(255, 255, 255, 0.85); letter-spacing: 0.5px; text-transform: uppercase; margin-top: 2px;">R-${resultNumber}</div>
                         </div>
                         <svg style="width: 6px; height: 6px; color: #fbbf24; opacity: 0.85; margin-bottom: 2px;" viewBox="0 0 24 24" fill="currentColor">
@@ -1438,7 +1597,8 @@ function getMiniPosterHTML(r, bgId, templateId, resultNumber, madrasaName) {
         const winnersHTML = sortedWinners.map((w) => {
             const rank = w.rank;
             const nameText = isGroup ? (w.studentName || 'TEAM A') : (w.studentName || '—');
-            const teamText = w.teamName || '—';
+            // FIX: resolve current team name via teamId
+            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || w.teamName || '—';
             const accentColor = rankAccentColors[rank] || '#ffffff';
 
             return `
@@ -1460,7 +1620,7 @@ function getMiniPosterHTML(r, bgId, templateId, resultNumber, madrasaName) {
             <div style="position: absolute; top: 10px; bottom: 10px; left: 10px; right: 10px; background: rgba(255,255,255,0.06); border: 0.5px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; z-index: 2; box-sizing: border-box;">
                 <div style="text-align: center; line-height: 1.1;">
                     <div style="display: flex; justify-content: center; gap: 4px; align-items: center; margin-bottom: 2px;">
-                        <span style="font-size: 4px; color: #fbbf24; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">${escapeHTML(r.categoryName.toUpperCase())}</span>
+                        <span style="font-size: 4px; color: #fbbf24; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">${escapeHTML(r.categoryName.toUpperCase())}${genderHTML}</span>
                         <span style="background: rgba(255,255,255,0.08); border: 0.25px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 1px 3px; font-size: 3.5px; font-weight: 700; color: white;">R${resultNumber}</span>
                     </div>
                     <div style="font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; font-size: 6.5px; font-weight: 800; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase;">${escapeHTML(r.programName)}</div>
@@ -1488,6 +1648,11 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
     const sortedWinners = activeWinners.filter(w => w.rank <= 3);
 
     const isGroup = r.programType === 'group' || (r.programType === 'general' && r.registrationType === 'group');
+
+    let genderHTML = '';
+    if (r.genderCategory && r.genderCategory.trim() !== '' && r.genderCategory.toLowerCase() !== 'mixed') {
+        genderHTML = ` <span style="font-size: 0.85em; opacity: 0.85; font-weight: 600;">&bull; ${escapeHTML(r.genderCategory.toUpperCase())}</span>`;
+    }
 
     const ordinalLabel = (rank) => {
         const labels = { 1: '1ST', 2: '2ND', 3: '3RD' };
@@ -1517,13 +1682,14 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
         const w3 = sortedWinners[2];
 
         const name1 = w1 ? (isGroup ? (w1.studentName || 'TEAM A') : (w1.studentName || '—')) : '—';
-        const team1 = w1 ? (w1.teamName || '—') : '—';
+        // FIX: resolve current team names via teamId
+        const team1 = w1 ? ((w1.teamId && teamsById.get(String(w1.teamId))?.name) || w1.teamName || '—') : '—';
 
         const name2 = w2 ? (isGroup ? (w2.studentName || 'TEAM B') : (w2.studentName || '—')) : '—';
-        const team2 = w2 ? (w2.teamName || '—') : '—';
+        const team2 = w2 ? ((w2.teamId && teamsById.get(String(w2.teamId))?.name) || w2.teamName || '—') : '—';
 
         const name3 = w3 ? (isGroup ? (w3.studentName || 'TEAM C') : (w3.studentName || '—')) : '—';
-        const team3 = w3 ? (w3.teamName || '—') : '—';
+        const team3 = w3 ? ((w3.teamId && teamsById.get(String(w3.teamId))?.name) || w3.teamName || '—') : '—';
 
         const hasWinners = sortedWinners.length > 0;
 
@@ -1572,7 +1738,7 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
             <div class="t2-container">
                 ${brandHeaderHTML}
                 <div class="t2-header">
-                    <span class="t2-category-badge">${escapeHTML(r.categoryName.toUpperCase())}</span>
+                    <span class="t2-category-badge">${escapeHTML(r.categoryName.toUpperCase())}${genderHTML}</span>
                     <h1 class="t2-program-title">${escapeHTML(r.programName.toUpperCase())}</h1>
                     <div class="t2-badge-row">
                         <span class="t2-result-badge">RESULT ${resultNumber}</span>
@@ -1593,7 +1759,8 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
         const winnersHTML = sortedWinners.map((w) => {
             const rank = w.rank;
             const nameText = isGroup ? (w.studentName || 'TEAM A') : (w.studentName || '—');
-            const teamText = w.teamName || '—';
+            // FIX: resolve current team name via teamId
+            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || w.teamName || '—';
             const rankLabel = rankLabels[rank] || `${rank}TH PLACE`;
 
             return `
@@ -1618,7 +1785,7 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
                 <div class="t3-header">
                     <div class="t3-header-left">
                         <h1 class="t3-program-title">${escapeHTML(r.programName.toUpperCase())}</h1>
-                        <span class="t3-category">${escapeHTML(r.categoryName.toUpperCase())}</span>
+                        <span class="t3-category">${escapeHTML(r.categoryName.toUpperCase())}${genderHTML}</span>
                         <span class="t3-result-badge">RESULT ${resultNumber}</span>
                     </div>
                    
@@ -1640,7 +1807,8 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
         const winnersHTML = sortedWinners.map((w) => {
             const rank = w.rank;
             const nameText = isGroup ? (w.studentName || 'TEAM A') : (w.studentName || '—');
-            const teamText = w.teamName || '—';
+            // FIX: resolve current team name via teamId
+            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || w.teamName || '—';
             const rankLabel = rankLabels[rank] || `${rank}TH PLACE`;
 
             return `
@@ -1672,7 +1840,7 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
                     <div class="t4-left-panel">
                         <div class="t4-left-header">
                             <h1 class="t4-program-title">${escapeHTML(r.programName.toUpperCase())}</h1>
-                            <span class="t4-category">${escapeHTML(r.categoryName.toUpperCase())}</span>
+                            <span class="t4-category">${escapeHTML(r.categoryName.toUpperCase())}${genderHTML}</span>
                             <span class="t4-result-badge">RESULT ${resultNumber}</span>
                         </div>
                         
@@ -1698,7 +1866,8 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
         const winnersHTML = sortedWinners.map((w) => {
             const rank = w.rank;
             const nameText = isGroup ? (w.studentName || 'TEAM A') : (w.studentName || '—');
-            const teamText = w.teamName || '—';
+            // FIX: resolve current team name via teamId
+            const teamText = (w.teamId && teamsById.get(String(w.teamId))?.name) || w.teamName || '—';
 
             return `
                 <div class="t1-row t1-rank-${rank <= 3 ? rank : 3}">
@@ -1722,7 +1891,7 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
                 ${brandHeaderHTML}
                 <div class="t1-header">
                     <div class="t1-header-left">
-                        <span class="t1-category">${escapeHTML(r.categoryName.toUpperCase())}</span>
+                        <span class="t1-category">${escapeHTML(r.categoryName.toUpperCase())}${genderHTML}</span>
                         <h1 class="t1-title">${escapeHTML(r.programName.toUpperCase())}</h1>
                     </div>
                     <div class="t1-header-divider"></div>

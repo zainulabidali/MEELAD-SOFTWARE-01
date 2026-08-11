@@ -1,4 +1,4 @@
-import { db, updateDashboardMetadata, computeDenseRanking, getCachedCategories, getCachedPrograms, getCachedStudentsMap } from './firebase.js';
+import { db, updateDashboardMetadata, computeDenseRanking, getCachedCategories, getCachedPrograms, getCachedStudentsMap, getCachedTeams } from './firebase.js';
 import {
     collection, doc, getDocs, onSnapshot, serverTimestamp, updateDoc, deleteDoc, writeBatch, setDoc, getDoc
 } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
@@ -23,6 +23,7 @@ let resultsFilter = {
 
 let allPrograms = [];
 let allResults = [];
+let allTeams = []; // FIX: used for teamId → name resolution at render time
 let unsubscribeResults = null;
 
 // ─────────────────────────────────────────────
@@ -246,11 +247,14 @@ export async function initResultsView(container, topActions) {
 // ─────────────────────────────────────────────
 async function loadResultsViewData() {
     try {
-        // Load Programs and Students Map from Cache
-        const [cachedProgs, studentMap] = await Promise.all([
+        // Load Programs, Students Map, and Teams from Cache
+        const [cachedProgs, studentMap, cachedTeams] = await Promise.all([
             getCachedPrograms(window.currentInstituteId),
-            getCachedStudentsMap(window.currentInstituteId)
+            getCachedStudentsMap(window.currentInstituteId),
+            getCachedTeams(window.currentInstituteId)
         ]);
+        // FIX: store teams for teamId → name resolution in leaderboard and result detail
+        allTeams = cachedTeams || [];
         allPrograms = cachedProgs.map(p => {
             const pType = (p.programType || p.type || 'individual').toLowerCase();
             return {
@@ -334,8 +338,13 @@ function renderResultsView() {
     if (publishPublicBtn) publishPublicBtn.disabled = unpublishedToPublic === 0;
 
     // 2. Dynamic Team Points Live Leaderboard
+    // FIX: aggregate by String(teamId) — not teamName — so renames don't cause stale keys
     const progMap = new Map(allPrograms.map(p => [p.id, p]));
-    const teamPoints = new Map();
+    const teamPoints = new Map(); // key = String(teamId)
+    const allTeamsMap = new Map((allTeams || []).map(t => [String(t.id), t]));
+
+    allTeams.forEach(t => { if (t.id) teamPoints.set(String(t.id), 0); });
+
     allResults.forEach(r => {
         if (r.status === 'published') {
             const prog = progMap.get(r.programId);
@@ -343,24 +352,30 @@ function renderResultsView() {
 
             if (Array.isArray(r.marksData) && r.marksData.length > 0) {
                 r.marksData.forEach(w => {
-                    if (w.teamId && w.teamId !== 'teamless' && w.teamName && w.teamName !== 'No Team' && w.totalPoints > 0) {
-                        const current = teamPoints.get(w.teamName) || 0;
-                        teamPoints.set(w.teamName, current + (w.totalPoints || 0));
+                    if (w.teamId && w.teamId !== 'teamless' && w.totalPoints > 0) {
+                        const tid = String(w.teamId);
+                        const current = teamPoints.get(tid) || 0;
+                        teamPoints.set(tid, current + (w.totalPoints || 0));
                     }
                 });
             } else if (Array.isArray(r.winners)) {
                 // Fallback for backward compatibility
                 r.winners.forEach(w => {
-                    if (w.teamId && w.teamId !== 'teamless' && w.teamName && w.teamName !== 'No Team') {
-                        const current = teamPoints.get(w.teamName) || 0;
-                        teamPoints.set(w.teamName, current + (w.marks || 0));
+                    if (w.teamId && w.teamId !== 'teamless') {
+                        const tid = String(w.teamId);
+                        const current = teamPoints.get(tid) || 0;
+                        teamPoints.set(tid, current + (w.marks || 0));
                     }
                 });
             }
         }
     });
 
-    const teamsArray = [...teamPoints.entries()].map(([name, points]) => ({ name, points }));
+    // Resolve current team names from allTeams map
+    const teamsArray = [...teamPoints.entries()].map(([tid, points]) => {
+        const t = allTeamsMap.get(tid);
+        return { id: tid, name: t?.name || '—', points };
+    });
     computeDenseRanking(teamsArray, t => t.points, 'rank');
     const leaderboardBody = document.getElementById('resLeaderboardBody');
     
@@ -664,7 +679,9 @@ async function openResultDetailPopup(r) {
                 }
             }
 
-            const teamDisplay = item.teamName || '—';
+            // FIX: resolve team display from allTeams via teamId first; fall back to stored teamName
+            const _resolvedTeam = (item.teamId && allTeams) ? allTeams.find(t => String(t.id) === String(item.teamId)) : null;
+            const teamDisplay = _resolvedTeam?.name || item.teamName || '—';
             const finalMark = hasScore ? item.finalMark : '—';
             const grade = (showGrade && hasScore) ? (item.grade || '') : '';
             const points = hasScore ? `${item.totalPoints || 0}pts` : '—';
