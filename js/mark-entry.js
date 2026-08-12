@@ -652,10 +652,17 @@ function getStatusBadgeHTML(status) {
 // Loading Subcollection Data
 // ─────────────────────────────────────────────
 async function loadStudentsForProgram(prog) {
-    const [snap, studentMap] = await Promise.all([
-        getDocs(collection(db, "institutes", window.currentInstituteId, "programs", prog.id, "participants")),
-        getCachedStudentsMap(window.currentInstituteId)
-    ]);
+    let snap;
+    let studentMap = null;
+    try {
+        [snap, studentMap] = await Promise.all([
+            getDocs(collection(db, "institutes", window.currentInstituteId, "programs", prog.id, "participants")),
+            getCachedStudentsMap(window.currentInstituteId)
+        ]);
+    } catch (err) {
+        console.warn("Could not load full students map (expected for anonymous judge). Falling back to basic participant data.");
+        snap = await getDocs(collection(db, "institutes", window.currentInstituteId, "programs", prog.id, "participants"));
+    }
     const isGroup = prog.programType === 'group' || prog.registrationType === 'group' || prog.type === 'Group';
     const list = [];
 
@@ -2681,6 +2688,7 @@ async function persistMarks(prog, judges, isSubmit) {
                     markEntryStatus,
                     judgeSubmissionStatus: dbJudgeSubmissionStatus,
                     gradeMode,
+                    lastUpdatedByJudge: sJudgeId || '',
                     updatedAt: serverTimestamp()
                 };
 
