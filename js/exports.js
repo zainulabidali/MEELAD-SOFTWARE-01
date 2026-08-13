@@ -1528,6 +1528,22 @@ function renderDrawerContent() {
                         </select>
                     </div>
 
+                    <!-- Position Filter (Only visible for Results Reports except Class Wise) -->
+                    <div id="expPositionFilterContainer" style="display:none; flex-direction:column; gap:0.45rem; margin-top:0.45rem;">
+                        <label style="font-weight:700; color:#475569; font-size:0.78rem;">POSITIONS</label>
+                        <div style="display:flex; gap:1rem; align-items:center;">
+                            <label style="display:flex; align-items:center; gap:0.3rem; font-size:0.85rem; color:#1e1b4b; cursor:pointer;">
+                                <input type="checkbox" id="expPosFilterFirst" checked style="accent-color:#4f46e5; width:16px; height:16px; cursor:pointer;" /> First
+                            </label>
+                            <label style="display:flex; align-items:center; gap:0.3rem; font-size:0.85rem; color:#1e1b4b; cursor:pointer;">
+                                <input type="checkbox" id="expPosFilterSecond" checked style="accent-color:#4f46e5; width:16px; height:16px; cursor:pointer;" /> Second
+                            </label>
+                            <label style="display:flex; align-items:center; gap:0.3rem; font-size:0.85rem; color:#1e1b4b; cursor:pointer;">
+                                <input type="checkbox" id="expPosFilterThird" style="accent-color:#4f46e5; width:16px; height:16px; cursor:pointer;" /> Third
+                            </label>
+                        </div>
+                    </div>
+
                     <!-- Chest Number List specific Mode Controls -->
                     <div id="chestListModeContainer" style="display:none; flex-direction:column; gap:0.45rem;">
                         <label style="font-weight:700; color:#475569; font-size:0.78rem;">CHEST NUMBER LIST FORMAT</label>
@@ -1722,6 +1738,15 @@ function renderDrawerContent() {
             }
         }
 
+        const expPositionFilterContainer = document.getElementById('expPositionFilterContainer');
+        if (expPositionFilterContainer) {
+            if (selType === 'Results' && !isClassAwards) {
+                expPositionFilterContainer.style.display = 'flex';
+            } else {
+                expPositionFilterContainer.style.display = 'none';
+            }
+        }
+
         // 4. Team / Institute Filter Container
         const expTeamFilterContainer = document.getElementById('expTeamFilterContainer');
         if (expTeamFilterContainer) {
@@ -1869,6 +1894,14 @@ function renderDrawerContent() {
 
             if (expResultSubVal) {
                 expResultSubVal.onchange = () => {
+                    const chkFirst = document.getElementById('expPosFilterFirst');
+                    const chkSecond = document.getElementById('expPosFilterSecond');
+                    const chkThird = document.getElementById('expPosFilterThird');
+                    if (chkFirst && chkSecond && chkThird) {
+                        chkFirst.checked = true;
+                        chkSecond.checked = true;
+                        chkThird.checked = false;
+                    }
                     updateConditionalFilters();
                     updateClassFilterState();
                     updateProgramsDropdown();
@@ -1876,6 +1909,14 @@ function renderDrawerContent() {
             }
 
             if (selectedType === 'Results') {
+                const chkFirst = document.getElementById('expPosFilterFirst');
+                const chkSecond = document.getElementById('expPosFilterSecond');
+                const chkThird = document.getElementById('expPosFilterThird');
+                if (chkFirst && chkSecond && chkThird) {
+                    chkFirst.checked = true;
+                    chkSecond.checked = true;
+                    chkThird.checked = false;
+                }
                 if (chestExportModeSelector) chestExportModeSelector.style.display = 'none';
                 const progRegExportModeSelector = document.getElementById('progRegExportModeSelector');
                 if (progRegExportModeSelector) progRegExportModeSelector.style.display = 'none';
@@ -2246,6 +2287,24 @@ function renderDrawerContent() {
             }
         }
 
+        let posFirst = true, posSecond = true, posThird = false;
+        if (selectedType === 'Results' && resultSubOption !== 'Class Wise Academic & Attendance') {
+            const chkFirst = document.getElementById('expPosFilterFirst');
+            const chkSecond = document.getElementById('expPosFilterSecond');
+            const chkThird = document.getElementById('expPosFilterThird');
+            if (chkFirst && chkSecond && chkThird) {
+                posFirst = chkFirst.checked;
+                posSecond = chkSecond.checked;
+                posThird = chkThird.checked;
+                if (!posFirst && !posSecond && !posThird) {
+                    window.showToast("Please select at least one position.", "error");
+                    btn.disabled = false;
+                    btn.textContent = '⚡ Generate Export';
+                    return;
+                }
+            }
+        }
+
         const format = document.getElementById('expFormat').value;
         const orientation = document.getElementById('expOrientation').value;
         const srcIncludeSubmitted = selectedType === 'Results' && document.getElementById('srcIncludeSubmitted').checked;
@@ -2378,7 +2437,10 @@ function renderDrawerContent() {
                     participationType,
                     registerMode,
                     chestMode,
-                    enableTeamBg: isTeamBgEnabled
+                    enableTeamBg: isTeamBgEnabled,
+                    posFirst,
+                    posSecond,
+                    posThird
                 }
             };
 
@@ -6492,6 +6554,36 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
     }
 
     else if (f.type === 'Results') {
+        htmlContent += `
+        <style>
+            @media print {
+                .global-results-footer {
+                    display: flex !important;
+                    position: fixed;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    justify-content: space-between;
+                    align-items: center;
+                    border-top: 1px solid #cbd5e1;
+                    padding-top: 5px;
+                    z-index: 1000;
+                    font-family: 'Poppins', sans-serif;
+                    background: white;
+                }
+                .global-results-footer .footer-left { font-size: 9px; font-weight: 600; color: #64748b; }
+                .global-results-footer .footer-right { font-size: 9.5px; font-weight: 700; color: #0f172a; }
+                .global-results-footer .footer-right::after { content: "Page " counter(page) " of " counter(pages); }
+                body { padding-bottom: 25px; }
+            }
+            .global-results-footer { display: none; }
+        </style>
+        <div class="global-results-footer">
+            <div class="footer-left">Meelad Event Management System</div>
+            <div class="footer-right"></div>
+        </div>
+        `;
+
         if (f.resultSubOption === 'Class Wise Academic & Attendance') {
             let filteredAwards = classAwards.filter(aw => {
                 if (f.classId && aw.classId !== f.classId) return false;
@@ -6717,14 +6809,14 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
             });
 
             if (!awardHTML) {
-                htmlContent = `
+                htmlContent += `
                     <div style="text-align:center; padding:4rem; color:#dc2626; border:1px solid #fecaca; border-radius:12px; background:#fef2f2;">
                         <h3 style="margin:0;">⚠️ No class award records found for the selected filters.</h3>
                         <p style="color:#64748b; margin-top:0.25rem; font-weight:600;">Please add class award winners first.</p>
                     </div>
                 `;
             } else {
-                htmlContent = mainHeaderHTML + awardHTML;
+                htmlContent += mainHeaderHTML + awardHTML;
             }
         }
         else {
@@ -6799,7 +6891,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
 
                 // 2. Category Champions Summaries (Phase 6)
                 let categoryHTML = '';
-                if (f.resultSubOption !== 'Program Wise') {
+                if (f.resultSubOption !== 'Program Wise' && f.resultSubOption !== 'Team Wise') {
                     allCategories.forEach(cat => {
                         const map = categoryScores.get(cat.id);
                         if (!map || map.size === 0) return;
@@ -6866,6 +6958,62 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
 
                 // 3. Program Wise Results (Phase 6)
                 if (f.resultSubOption === 'Team Wise') {
+                    // Premium UI configuration: Fonts, global layout resets for this PDF type
+                    const eventDetails = window.currentEventDetails || {};
+                    const eventName = getEventName() || 'Meelad Event';
+                    const madrasaName = eventDetails.madrasaName || '';
+
+                    htmlContent += `
+                        <style>
+                            @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap');
+                            @media print {
+                                @page { size: A4 portrait; margin: 18mm 12mm; }
+                                .team-wise-container { 
+                                    padding-top: 15mm; 
+                                    padding-bottom: 12mm;
+                                    font-family: 'Poppins', sans-serif;
+                                }
+                                .tw-print-header {
+                                    display: flex !important;
+                                    position: fixed;
+                                    top: 0;
+                                    left: 0;
+                                    right: 0;
+                                    justify-content: space-between;
+                                    align-items: flex-end;
+                                    border-bottom: 1.5px solid #d97706; /* Elegant gold divider */
+                                    padding-bottom: 6px;
+                                    z-index: 1000;
+                                    font-family: 'Poppins', sans-serif;
+                                }
+                                .tw-header-left { display: flex; flex-direction: column; }
+                                .tw-header-left .main-title { font-size: 16px; font-weight: 900; color: #0f172a; line-height: 1.1; letter-spacing: 0.5px; }
+                                .tw-header-left .sub-title { font-size: 10px; font-weight: 600; color: #475569; text-transform: uppercase; margin-top: 2px; }
+                                
+                                .tw-header-right { display: flex; flex-direction: column; text-align: right; }
+                                .tw-header-right .event-name { font-size: 11px; font-weight: 800; color: #1e293b; }
+                                .tw-header-right .madrasa-name { font-size: 9px; font-weight: 500; color: #64748b; margin-top: 1px; }
+                                
+                                .tw-print-footer { display: none !important; }
+                            }
+                            .tw-print-header { display: none; }
+                            .premium-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 0.5rem; font-family: 'Poppins', sans-serif; border: 1px solid #cbd5e1; }
+                            .premium-table th { padding: 4px 6px; font-size: 9.5px; text-transform: uppercase; font-weight: 700; background: #0f172a; color: #ffffff; letter-spacing: 0.5px; border-bottom: 2px solid #cbd5e1; border-left: 1px solid #334155; border-right: 1px solid #334155; }
+                            .premium-table td { padding: 4px 6px; font-size: 9.5px; font-weight: 500; color: #1e293b; border-bottom: 1px solid #e2e8f0; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; line-height: 1.2; vertical-align: middle; word-break: normal; overflow-wrap: break-word; white-space: normal; }
+                            .premium-table tr:nth-child(even) td { background-color: #f8fafc; }
+                        </style>
+                        <div class="tw-print-header">
+                            <div class="tw-header-left">
+                                <span class="main-title">TEAM WISE STANDINGS & ROSTER</span>
+                                <span class="sub-title">Team Winners Index</span>
+                            </div>
+                            <div class="tw-header-right">
+                                <span class="event-name">${window.escapeHTML(eventName)}</span>
+                                ${madrasaName ? `<span class="madrasa-name">${window.escapeHTML(madrasaName)}</span>` : ''}
+                            </div>
+                        </div>
+                    `;
+
                     const teamWinners = new Map();
                     filteredResults.forEach(r => {
                         const winners = Array.isArray(r.winners) ? r.winners : [];
@@ -6888,80 +7036,120 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                 chestNumber: resolved.chestNumbers
                             };
 
-                            if (w.position === 'First') teamWinners.get(resolved.teamName).First.push(entry);
-                            else if (w.position === 'Second') teamWinners.get(resolved.teamName).Second.push(entry);
-                            else if (w.position === 'Third') teamWinners.get(resolved.teamName).Third.push(entry);
+                            if (w.position === 'First' && f.posFirst) teamWinners.get(resolved.teamName).First.push(entry);
+                            else if (w.position === 'Second' && f.posSecond) teamWinners.get(resolved.teamName).Second.push(entry);
+                            else if (w.position === 'Third' && f.posThird) teamWinners.get(resolved.teamName).Third.push(entry);
                         });
                     });
+
+                    const getCategoryPriority = (catName) => {
+                        const name = (catName || '').trim().toUpperCase();
+                        if (name.includes('SUB JUNIOR')) return 1;
+                        if (name.includes('JUNIOR')) return 2;
+                        if (name.includes('SENIOR')) return 3;
+                        return 4;
+                    };
 
                     const sortedTeamNames = [...teamWinners.keys()].sort();
                     sortedTeamNames.forEach(teamName => {
                         const data = teamWinners.get(teamName);
 
-                        const renderRows = (list, posLabel, actualPos) => {
-                            if (list.length === 0) return `<tr><td colspan="6" style="color:#94a3b8; font-style:italic; font-size:0.75rem;">No ${posLabel} place winners recorded.</td></tr>`;
-                            return list.map(item => `
-                            <tr>
-                                <td style="text-align:center; font-weight:800;">${window.escapeHTML(item.chestNumber)}</td>
-                                <td style="font-weight:700; color:#1e293b;">${window.escapeHTML(item.studentName)}</td>
-                                <td style="font-weight:600; color:#475569;">${window.escapeHTML(teamName)}</td>
-                                <td style="color:#475569; font-weight:600;">${window.escapeHTML(item.categoryName)}</td>
-                                <td style="text-align:center; font-weight:700; color:#4338ca;">${window.escapeHTML(actualPos)}</td>
-                                <td style="font-weight:800; color:#1e293b;">${window.escapeHTML(item.programName)}</td>
-                            </tr>
-                        `).join('');
+                        const renderGroupedRows = (list, posLabel, actualPos, accentColor) => {
+                            if (list.length === 0) return `<tr><td colspan="6" style="padding: 6px; color:#94a3b8; font-style:italic; font-size: 9px; text-align:center; background:#ffffff;">No ${posLabel} place winners recorded.</td></tr>`;
+                            
+                            const grouped = new Map();
+                            list.forEach(item => {
+                                const cName = item.categoryName || 'Unknown Category';
+                                if (!grouped.has(cName)) grouped.set(cName, []);
+                                grouped.get(cName).push(item);
+                            });
+
+                            const sortedCategories = [...grouped.keys()].sort((a, b) => {
+                                return getCategoryPriority(a) - getCategoryPriority(b) || a.localeCompare(b);
+                            });
+
+                            let rowsHtml = '';
+                            sortedCategories.forEach(catName => {
+                                rowsHtml += `
+                                    <tr class="category-row" style="break-inside: avoid; page-break-inside: avoid; background-color: #f1f5f9 !important;">
+                                        <td colspan="6" style="padding: 4px 6px; font-weight: 800; font-size: 9px; color: #0f172a; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; border-top: 1px solid #cbd5e1; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">
+                                            ⯈ ${window.escapeHTML(catName)}
+                                        </td>
+                                    </tr>
+                                `;
+                                grouped.get(catName).forEach(item => {
+                                    rowsHtml += `
+                                    <tr style="break-inside: avoid; page-break-inside: avoid;">
+                                        <td style="text-align:center; font-weight:800; font-size:10px; color:#0f172a;">${window.escapeHTML(item.chestNumber)}</td>
+                                        <td style="text-align:left; font-weight:700;">${window.escapeHTML(item.studentName)}</td>
+                                        <td style="text-align:left; font-weight:600; color:#475569;">${window.escapeHTML(teamName)}</td>
+                                        <td style="text-align:left; color:#64748b; font-weight:500; font-size:8.5px;">${window.escapeHTML(item.categoryName)}</td>
+                                        <td style="text-align:center; font-weight:800; color:${accentColor};">${window.escapeHTML(actualPos)}</td>
+                                        <td style="text-align:left; font-weight:600; color:#1e293b;">${window.escapeHTML(item.programName)}</td>
+                                    </tr>
+                                    `;
+                                });
+                            });
+                            return rowsHtml;
                         };
 
                         htmlContent += `
-                        <div class="program-page-standard">
-                            <div style="border-bottom:3px solid #1e1b4b; padding-bottom:0.5rem; margin-bottom:1rem; display:flex; justify-content:space-between; align-items:flex-end;">
-                                <h2 style="color:#1e1b4b; margin:0;">👥 TEAM WINNERS INDEX: ${window.escapeHTML(teamName)}</h2>
+                        <div class="team-wise-container" style="page-break-after:always; font-family: 'Poppins', sans-serif;">
+                            <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #0f172a; border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; break-inside: avoid; page-break-inside: avoid;">
+                                <div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">🏆 TEAM WINNERS INDEX</div>
+                                <h2 style="color: #0f172a; margin: 0; font-size: 18px; font-weight: 900; line-height: 1.1;">${window.escapeHTML(teamName)}</h2>
                             </div>
 
-                            <h4 style="color:#d97706; margin-top:0.75rem; margin-bottom:0.4rem;">🥇 FIRST WINNERS</h4>
-                            <table class="report-table" style="margin-bottom:1rem; font-size:0.8rem;">
-                                <thead>
-                                    <tr style="background:#fffbeb;">
-                                        <th style="width:100px; text-align:center;">Chest No</th>
-                                        <th>Student / Group Name</th>
-                                        <th>Team</th>
-                                        <th>Category</th>
-                                        <th style="width:100px; text-align:center;">Position</th>
-                                        <th>Program</th>
-                                    </tr>
-                                </thead>
-                                <tbody>${renderRows(data.First, 'first', 'First')}</tbody>
-                            </table>
+                            <div style="break-inside: avoid; page-break-inside: avoid; margin-bottom: 12px;">
+                                <h4 style="color: #d97706; margin: 0 0 4px 0; font-size: 12px; font-weight: 800; text-transform: uppercase;">🥇 FIRST WINNERS</h4>
+                                <table class="premium-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width:10%; text-align:center;">Chest No</th>
+                                            <th style="width:21%; text-align:left;">Student / Group Name</th>
+                                            <th style="width:17%; text-align:left;">Team</th>
+                                            <th style="width:16%; text-align:left;">Category</th>
+                                            <th style="width:11%; text-align:center;">Position</th>
+                                            <th style="width:25%; text-align:left;">Program</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>${renderGroupedRows(data.First, 'first', 'First', '#d97706')}</tbody>
+                                </table>
+                            </div>
 
-                            <h4 style="color:#475569; margin-top:1.25rem; margin-bottom:0.4rem;">🥈 SECOND WINNERS</h4>
-                            <table class="report-table" style="margin-bottom:1rem; font-size:0.8rem;">
-                                <thead>
-                                    <tr style="background:#f8fafc;">
-                                        <th style="width:100px; text-align:center;">Chest No</th>
-                                        <th>Student / Group Name</th>
-                                        <th>Team</th>
-                                        <th>Category</th>
-                                        <th style="width:100px; text-align:center;">Position</th>
-                                        <th>Program</th>
-                                    </tr>
-                                </thead>
-                                <tbody>${renderRows(data.Second, 'second', 'Second')}</tbody>
-                            </table>
+                            <div style="break-inside: avoid; page-break-inside: avoid; margin-bottom: 12px;">
+                                <h4 style="color: #64748b; margin: 0 0 4px 0; font-size: 12px; font-weight: 800; text-transform: uppercase;">🥈 SECOND WINNERS</h4>
+                                <table class="premium-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width:10%; text-align:center;">Chest No</th>
+                                            <th style="width:21%; text-align:left;">Student / Group Name</th>
+                                            <th style="width:17%; text-align:left;">Team</th>
+                                            <th style="width:16%; text-align:left;">Category</th>
+                                            <th style="width:11%; text-align:center;">Position</th>
+                                            <th style="width:25%; text-align:left;">Program</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>${renderGroupedRows(data.Second, 'second', 'Second', '#64748b')}</tbody>
+                                </table>
+                            </div>
 
-                            <h4 style="color:#ea580c; margin-top:1.25rem; margin-bottom:0.4rem;">🥉 THIRD WINNERS</h4>
-                            <table class="report-table" style="font-size:0.8rem;">
-                                <thead>
-                                    <tr style="background:#fff7ed;">
-                                        <th style="width:100px; text-align:center;">Chest No</th>
-                                        <th>Student / Group Name</th>
-                                        <th>Team</th>
-                                        <th>Category</th>
-                                        <th style="width:100px; text-align:center;">Position</th>
-                                        <th>Program</th>
-                                    </tr>
-                                </thead>
-                                <tbody>${renderRows(data.Third, 'third', 'Third')}</tbody>
-                            </table>
+                            <div style="break-inside: avoid; page-break-inside: avoid; margin-bottom: 12px;">
+                                <h4 style="color: #b45309; margin: 0 0 4px 0; font-size: 12px; font-weight: 800; text-transform: uppercase;">🥉 THIRD WINNERS</h4>
+                                <table class="premium-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width:10%; text-align:center;">Chest No</th>
+                                            <th style="width:21%; text-align:left;">Student / Group Name</th>
+                                            <th style="width:17%; text-align:left;">Team</th>
+                                            <th style="width:16%; text-align:left;">Category</th>
+                                            <th style="width:11%; text-align:center;">Position</th>
+                                            <th style="width:25%; text-align:left;">Program</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>${renderGroupedRows(data.Third, 'third', 'Third', '#b45309')}</tbody>
+                                </table>
+                            </div>
                         </div>
                     `;
                     });
@@ -7007,7 +7195,14 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                             return 4;
                         };
 
-                        const sortedWinners = combinedWinners.sort((a, b) => {
+                        const filteredWinners = combinedWinners.filter(w => {
+                            if (w.position === 'First') return f.posFirst;
+                            if (w.position === 'Second') return f.posSecond;
+                            if (w.position === 'Third') return f.posThird;
+                            return true;
+                        });
+
+                        const sortedWinners = filteredWinners.sort((a, b) => {
                             const pA = posOrder[a.position] || 4;
                             const pB = posOrder[b.position] || 4;
                             if (pA !== pB) return pA - pB;
@@ -7088,12 +7283,20 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                         }
                                     }
 
+                                    let classSuffix = '';
+                                    if (resolved.memberStudents && resolved.memberStudents.length > 0) {
+                                        const uniqueClasses = [...new Set(resolved.memberStudents.map(m => m.className).filter(c => c && c !== '—'))];
+                                        if (uniqueClasses.length > 0) {
+                                            classSuffix = ` - <span style="font-size:0.85em; opacity:0.85; font-weight:600;">${window.escapeHTML(uniqueClasses.join(', '))}</span>`;
+                                        }
+                                    }
+
                                     return `
                                             <tr>
                                                 <td style="text-align:center; font-weight:900; color:#1e1b4b;">${posBadge}</td>
                                                 <td style="text-align:center; font-weight:800; color:#0f172a;">${window.escapeHTML(codeLetterDisplay)}</td>
                                                 <td style="text-align:center; font-weight:800; color:#0f172a;">${window.escapeHTML(resolved.chestNumbers)}</td>
-                                                <td style="font-weight:700; color:#1e293b;">${window.escapeHTML(resolved.displayName)}</td>
+                                                <td style="font-weight:700; color:#1e293b;">${window.escapeHTML(resolved.displayName)}${classSuffix}</td>
                                                 <td style="font-weight:600; color:#475569;">${window.escapeHTML(resolved.teamName || '—')}</td>
                                                 <td style="text-align:center; font-weight:700; color:#4338ca;">${window.escapeHTML(gradeVal)}</td>
                                                 <td style="text-align:center; font-weight:900; color:#16a34a;">${points}</td>
@@ -7149,6 +7352,10 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                 const listObj = studentPrizes.get(stuKey);
                                 const alreadyAdded = listObj.prizes.some(p => p.programName === r.programName && p.position === w.position);
                                 if (!alreadyAdded) {
+                                    if (w.position === 'First' && !f.posFirst) return;
+                                    if (w.position === 'Second' && !f.posSecond) return;
+                                    if (w.position === 'Third' && !f.posThird) return;
+
                                     listObj.prizes.push({
                                         programName: r.programName,
                                         position: w.position,
@@ -7221,7 +7428,11 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                 }
 
                 else if (f.resultSubOption === 'Prize Distribution Register') {
-                    const positions = ['First', 'Second', 'Third'];
+                    const positions = [];
+                    if (f.posFirst) positions.push('First');
+                    if (f.posSecond) positions.push('Second');
+                    if (f.posThird) positions.push('Third');
+                    
                     const positionTitles = {
                         'First': '🥇 SECTION 1: FIRST PLACE WINNERS',
                         'Second': '🥈 SECTION 2: SECOND PLACE WINNERS',
@@ -7333,8 +7544,14 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                 if (items.length === 0) return;
 
                                 items.sort((a, b) => {
+                                    const classA = String(a.className || '').trim();
+                                    const classB = String(b.className || '').trim();
+                                    const cComp = classA.localeCompare(classB, undefined, { numeric: true, sensitivity: 'base' });
+                                    if (cComp !== 0) return cComp;
+
                                     const pComp = a.programName.localeCompare(b.programName, undefined, { sensitivity: 'base' });
                                     if (pComp !== 0) return pComp;
+                                    
                                     return a.chestNumber.localeCompare(b.chestNumber, undefined, { numeric: true, sensitivity: 'base' });
                                 });
 
@@ -7446,8 +7663,13 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                             });
                         });
 
-                        const hasMajorPrize = prizes.some(p => p === 'First' || p === 'Second');
-                        if (hasMajorPrize) return;
+                        const hasExcludedPrize = prizes.some(p => {
+                            if (p === 'First' && f.posFirst) return true;
+                            if (p === 'Second' && f.posSecond) return true;
+                            if (p === 'Third' && f.posThird) return true;
+                            return false;
+                        });
+                        if (hasExcludedPrize) return;
 
                         let statusLabel = '';
                         if (participations.length === 0) {
@@ -7622,7 +7844,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
         <style>
             @page {
                 size: A4 ${orientation};
-                margin: ${f.type === 'Call List' ? '12mm 0 0 0 !important' : '0'};
+                margin: ${f.type === 'Results' ? '15mm 10mm 15mm 10mm !important' : (f.type === 'Call List' ? '12mm 0 0 0 !important' : '0')};
             }
             body {
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -7896,7 +8118,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
 
                 const html2pdf = await loadHtml2Pdf();
                 const opt = {
-                    margin: 10,
+                    margin: f.type === 'Results' ? [15, 10, 15, 10] : 10,
                     filename: exp.fileName || 'export.pdf',
                     image: { type: 'jpeg', quality: 0.98 },
                     html2canvas: { scale: 1.5, useCORS: true, logging: false, scrollX: 0, scrollY: 0 },
@@ -7904,7 +8126,31 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                     pagebreak: { mode: ['css', 'legacy'] }
                 };
                 const element = doc.body;
-                await html2pdf().set(opt).from(element).save();
+
+                if (f.type === 'Results') {
+                    const footer = element.querySelector('.global-results-footer');
+                    if (footer) footer.style.display = 'none';
+
+                    await html2pdf().set(opt).from(element).toPdf().get('pdf').then(function (pdf) {
+                        const totalPages = pdf.internal.getNumberOfPages();
+                        for (let i = 1; i <= totalPages; i++) {
+                            pdf.setPage(i);
+                            pdf.setFontSize(9);
+                            pdf.setTextColor(15, 23, 42); // #0f172a
+                            const pageWidth = pdf.internal.pageSize.getWidth();
+                            const pageHeight = pdf.internal.pageSize.getHeight();
+                            
+                            pdf.setFont(undefined, 'bold');
+                            pdf.text('Page ' + i + ' of ' + totalPages, pageWidth - 10, pageHeight - 10, { align: 'right' });
+                            
+                            pdf.setFont(undefined, 'normal');
+                            pdf.setTextColor(100, 116, 139); // #64748b
+                            pdf.text('Meelad Event Management System', 10, pageHeight - 10);
+                        }
+                    }).save();
+                } else {
+                    await html2pdf().set(opt).from(element).save();
+                }
 
                 printIframe.style.width = prevWidth;
                 printIframe.style.height = prevHeight;
@@ -8592,7 +8838,15 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
                         }
                     }
 
-                    csvContent += `"${w.position}","${codeLetterDisplay}","${resolved.chestNumbers}","${resolved.displayName}","${resolved.teamName || ''}","${gradeVal}",${points}\n`;
+                    let classSuffix = '';
+                    if (resolved.memberStudents && resolved.memberStudents.length > 0) {
+                        const uniqueClasses = [...new Set(resolved.memberStudents.map(m => m.className).filter(c => c && c !== '—'))];
+                        if (uniqueClasses.length > 0) {
+                            classSuffix = ` - ${uniqueClasses.join(', ')}`;
+                        }
+                    }
+
+                    csvContent += `"${w.position}","${codeLetterDisplay}","${resolved.chestNumbers}","${resolved.displayName}${classSuffix}","${resolved.teamName || ''}","${gradeVal}",${points}\n`;
                 });
             });
         }
