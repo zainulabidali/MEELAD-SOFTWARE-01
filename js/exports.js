@@ -7216,6 +7216,9 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                             return mB - mA;
                         });
 
+                        const progDataForGender = allPrograms.find(p => p.id === r.programId || p.id === r.id) || r;
+                        const genderText = progDataForGender.gender ? ` · Gender: ${window.escapeHTML(String(progDataForGender.gender).toUpperCase())}` : '';
+
                         htmlContent += `
                         <div class="${pageDivClass}">
                             <div class="report-header">
@@ -7223,7 +7226,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                     <div class="report-title">🏆 PROGRAM RESULTS PODIUM</div>
                                     <h2 style="margin-top:0.3rem; margin-bottom:0.1rem; color:#1e1b4b; font-size:1.3rem;">${window.escapeHTML(r.programName)}</h2>
                                     <div style="font-size:0.75rem; font-weight:700; color:#4338ca;">
-                                        Category: ${window.escapeHTML(r.categoryName)} ${r.className ? `· Class: ${window.escapeHTML(r.className)}` : ''} · 
+                                        Category: ${window.escapeHTML(r.categoryName)} ${r.className ? `· Class: ${window.escapeHTML(r.className)}` : ''}${genderText} · 
                                         Type: ${r.programType === 'group' ? 'Group Event' : 'Individual Event'}
                                     </div>
                                 </div>
