@@ -7975,6 +7975,8 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                 margin-bottom: 0.75rem !important;
                 border-bottom: 1.5px dashed #000 !important;
                 padding-bottom: 0.5rem !important;
+                page-break-inside: auto !important;
+                break-inside: auto !important;
             }
             ` : ''}
 
