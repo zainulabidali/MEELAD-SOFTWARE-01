@@ -1542,6 +1542,11 @@ function renderDrawerContent() {
                                 <input type="checkbox" id="expPosFilterThird" style="accent-color:#4f46e5; width:16px; height:16px; cursor:pointer;" /> Third
                             </label>
                         </div>
+                        <div id="expPosFilterGeneralContainer" style="display:none; margin-top:0.3rem;">
+                            <label style="display:flex; align-items:center; gap:0.3rem; font-size:0.85rem; color:#1e1b4b; cursor:pointer;">
+                                <input type="checkbox" id="expPosFilterGeneral" style="accent-color:#4f46e5; width:16px; height:16px; cursor:pointer;" /> General Programs
+                            </label>
+                        </div>
                     </div>
 
                     <!-- Chest Number List specific Mode Controls -->
@@ -1742,6 +1747,10 @@ function renderDrawerContent() {
         if (expPositionFilterContainer) {
             if (selType === 'Results' && !isClassAwards) {
                 expPositionFilterContainer.style.display = 'flex';
+                const expPosFilterGeneralContainer = document.getElementById('expPosFilterGeneralContainer');
+                if (expPosFilterGeneralContainer) {
+                    expPosFilterGeneralContainer.style.display = (expResultSubVal && expResultSubVal.value === 'Participants Without Major Prizes') ? 'block' : 'none';
+                }
             } else {
                 expPositionFilterContainer.style.display = 'none';
             }
@@ -2287,15 +2296,17 @@ function renderDrawerContent() {
             }
         }
 
-        let posFirst = true, posSecond = true, posThird = false;
+        let posFirst = true, posSecond = true, posThird = false, excludeGeneral = false;
         if (selectedType === 'Results' && resultSubOption !== 'Class Wise Academic & Attendance') {
             const chkFirst = document.getElementById('expPosFilterFirst');
             const chkSecond = document.getElementById('expPosFilterSecond');
             const chkThird = document.getElementById('expPosFilterThird');
+            const chkGeneral = document.getElementById('expPosFilterGeneral');
             if (chkFirst && chkSecond && chkThird) {
                 posFirst = chkFirst.checked;
                 posSecond = chkSecond.checked;
                 posThird = chkThird.checked;
+                if (chkGeneral) excludeGeneral = chkGeneral.checked;
                 if (!posFirst && !posSecond && !posThird) {
                     window.showToast("Please select at least one position.", "error");
                     btn.disabled = false;
@@ -2440,7 +2451,8 @@ function renderDrawerContent() {
                     enableTeamBg: isTeamBgEnabled,
                     posFirst,
                     posSecond,
-                    posThird
+                    posThird,
+                    excludeGeneral
                 }
             };
 
@@ -7661,15 +7673,17 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                 const resolved = resolveWinnerParticipant(prog, w, participantsMap[r.programId || r.id], studentMap);
                                 const isMember = resolved.memberStudents.some(mst => mst.studentId === studentId || mst.name === stu.name);
                                 if (isMember) {
-                                    prizes.push(w.position);
+                                    prizes.push({ position: w.position, programType: prog.type });
                                 }
                             });
                         });
 
                         const hasExcludedPrize = prizes.some(p => {
-                            if (p === 'First' && f.posFirst) return true;
-                            if (p === 'Second' && f.posSecond) return true;
-                            if (p === 'Third' && f.posThird) return true;
+                            if (!f.excludeGeneral && p.programType === 'general') return false;
+                            
+                            if (p.position === 'First' && f.posFirst) return true;
+                            if (p.position === 'Second' && f.posSecond) return true;
+                            if (p.position === 'Third' && f.posThird) return true;
                             return false;
                         });
                         if (hasExcludedPrize) return;
@@ -9094,19 +9108,26 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
                         const resolved = resolveWinnerParticipant(prog, w, participantsMap[r.programId || r.id], studentMap);
                         const isMember = resolved.memberStudents.some(mst => mst.studentId === studentId || mst.name === stu.name);
                         if (isMember) {
-                            prizes.push(w.position);
+                            prizes.push({ position: w.position, programType: prog.type });
                         }
                     });
                 });
 
-                const hasMajorPrize = prizes.some(p => p === 'First' || p === 'Second');
-                if (hasMajorPrize) return;
+                const hasExcludedPrize = prizes.some(p => {
+                    if (!f.excludeGeneral && p.programType === 'general') return false;
+                    
+                    if (p.position === 'First' && f.posFirst) return true;
+                    if (p.position === 'Second' && f.posSecond) return true;
+                    if (p.position === 'Third' && f.posThird) return true;
+                    return false;
+                });
+                if (hasExcludedPrize) return;
 
                 let statusLabel = '';
                 if (participations.length === 0) {
                     statusLabel = 'No Participation';
                 } else {
-                    const hasThirdPrize = prizes.some(p => p === 'Third');
+                    const hasThirdPrize = prizes.some(p => p.position === 'Third');
                     statusLabel = hasThirdPrize ? 'Third Prize Only' : 'No Prize';
                 }
 
