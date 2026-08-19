@@ -1,4 +1,4 @@
-import { db, getCachedTeams } from './firebase.js';
+import { db, getCachedTeams, getCachedPrograms } from './firebase.js';
 import {
     collection, doc, getDoc, getDocs, onSnapshot, query, where
 } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
@@ -39,6 +39,7 @@ let selectedCategory = '';
 let selectedGender = '';
 let selectedProgramId = '';
 let allTeams = [];
+let allProgramsMap = new Map();
 
 // Helper: Escape HTML
 function escapeHTML(str) {
@@ -164,15 +165,73 @@ function updateHeader() {
 // ─────────────────────────────────────────────
 // SUMMARY STATS RENDERER
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// STANDINGS CALCULATION (CLIENT-SIDE FOR PUBLIC ONLY)
+// ─────────────────────────────────────────────
+function recalculatePublicStandings() {
+    if (!allTeams || allTeams.length === 0) return;
+    
+    const teamPoints = new Map();
+    allTeams.forEach(t => teamPoints.set(String(t.id), 0));
+    
+    const catPoints = new Map();
+
+    publishedResultsList.forEach(r => {
+        const prog = allProgramsMap.get(r.programId);
+        if (prog && prog.leaderboardEnabled === false) return;
+        
+        const catName = r.categoryName || r.category || 'General';
+        if (!catPoints.has(catName)) {
+            const m = new Map();
+            allTeams.forEach(t => m.set(String(t.id), 0));
+            catPoints.set(catName, m);
+        }
+        const teamMapForCat = catPoints.get(catName);
+
+        if (Array.isArray(r.marksData) && r.marksData.length > 0) {
+            r.marksData.forEach(w => {
+                if (w.teamId && w.teamId !== 'teamless' && w.totalPoints > 0) {
+                    const tid = String(w.teamId);
+                    if (teamPoints.has(tid)) {
+                        teamPoints.set(tid, teamPoints.get(tid) + (w.totalPoints || 0));
+                        teamMapForCat.set(tid, teamMapForCat.get(tid) + (w.totalPoints || 0));
+                    }
+                }
+            });
+        } else if (Array.isArray(r.winners)) {
+            r.winners.forEach(w => {
+                if (w.teamId && w.teamId !== 'teamless') {
+                    const tid = String(w.teamId);
+                    if (teamPoints.has(tid)) {
+                        teamPoints.set(tid, teamPoints.get(tid) + (w.marks || 0));
+                        teamMapForCat.set(tid, teamMapForCat.get(tid) + (w.marks || 0));
+                    }
+                }
+            });
+        }
+    });
+
+    leaderboardData = [...teamPoints.entries()]
+        .map(([tid, points]) => ({ id: tid, name: allTeams.find(t => String(t.id) === tid)?.name || '-', points }))
+        .sort((a, b) => b.points - a.points);
+    
+    categoryPerformanceData = [...catPoints.entries()].map(([catName, teamMap]) => {
+        const teamList = [...teamMap.entries()]
+            .map(([tid, points]) => ({ id: tid, name: allTeams.find(t => String(t.id) === tid)?.name || '-', points }))
+            .sort((a, b) => b.points - a.points);
+        
+        return {
+            categoryName: catName,
+            teams: teamList
+        };
+    });
+}
+
 function updateSummaryStats() {
     const totalProgCount = dashboardData?.programsCount || publishedResultsList.length || 0;
-    const completedCount = dashboardData?.publishedResultsCount || publishedResultsList.length || 0;
-    const pendingCount = dashboardData?.pendingProgramsCount !== undefined
-        ? dashboardData.pendingProgramsCount
-        : Math.max(0, totalProgCount - completedCount);
-    const progressPct = dashboardData?.overallProgressPct !== undefined
-        ? dashboardData.overallProgressPct
-        : (totalProgCount > 0 ? Math.round((completedCount / totalProgCount) * 100) : 0);
+    const completedCount = publishedResultsList.length || 0;
+    const pendingCount = Math.max(0, totalProgCount - completedCount);
+    const progressPct = totalProgCount > 0 ? Math.round((completedCount / totalProgCount) * 100) : 0;
 
     const elPublished = document.getElementById('statPublishedVal');
     const elPending = document.getElementById('statPendingVal');
@@ -611,6 +670,10 @@ async function initPublicResultsHub() {
         allTeams = await getCachedTeams(instId) || [];
     } catch(e) {}
     try {
+        const progs = await getCachedPrograms(instId) || [];
+        allProgramsMap = new Map(progs.map(p => [p.id, p]));
+    } catch(e) {}
+    try {
         const instSnap = await getDoc(doc(db, "institutes", instId));
         if (instSnap.exists()) {
             instituteDetails = { id: instSnap.id, ...instSnap.data() };
@@ -637,12 +700,8 @@ async function initPublicResultsHub() {
         if (snap.exists()) {
             const data = snap.data();
             dashboardData = data;
-            leaderboardData = data.leaderboard || [];
-            categoryPerformanceData = data.categoryPerformance || [];
 
             updateSummaryStats();
-            renderTeamChampionship();
-            renderCategoryStandings();
             saveHubDataCache();
         }
     }, err => console.warn("Dashboard metadata snapshot notice:", err));
@@ -654,7 +713,7 @@ async function initPublicResultsHub() {
 
         onSnapshot(pubQuery, (querySnap) => {
             publishedResultsList = querySnap.docs.map(d => ({ id: d.id, ...d.data() }))
-                .filter(r => r.publicDisabled !== true);
+                .filter(r => r.publicReleased === true && r.publicDisabled !== true);
 
             publishedResultsList.sort((a, b) => {
                 const tA = a.publishedAt?.seconds || 0;
@@ -681,6 +740,11 @@ async function initPublicResultsHub() {
             populateGenderSelect();
             populateProgramSelect();
             updateSummaryStats();
+            
+            recalculatePublicStandings();
+            renderTeamChampionship();
+            renderCategoryStandings();
+            
             if (selectedProgramId) renderProgramResultCard();
 
             saveHubDataCache();
