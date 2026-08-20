@@ -6369,15 +6369,25 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
     }
 
     else if (f.type === 'Call List') {
-        // Sort programs by location then program name
+        // Sort programs strictly by Program Number (natural sort)
         programs.sort((a, b) => {
-            const locCmp = (a.programLocation || '').localeCompare(b.programLocation || '');
-            if (locCmp !== 0) return locCmp;
-            return (a.programName || '').localeCompare(b.programName || '');
+            return String(a.programNumber || '').localeCompare(String(b.programNumber || ''), undefined, { numeric: true, sensitivity: 'base' });
         });
 
         programs.forEach(p => {
             const parts = participantsMap[p.id] || [];
+            
+            // Sort participants by Class natural order
+            parts.sort((a, b) => {
+                const getClassName = (item) => {
+                    const student = item.studentId ? studentMap[item.studentId] : null;
+                    return student ? (student.className || student.classId || '') : '';
+                };
+                const classA = getClassName(a);
+                const classB = getClassName(b);
+                return classA.localeCompare(classB, undefined, { numeric: true, sensitivity: 'base' });
+            });
+
             const pType = (p.programType || '').toLowerCase();
             const pageDivClass = isCompact ? 'program-card-compact' : 'program-page-standard';
 
