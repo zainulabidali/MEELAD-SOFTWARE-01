@@ -50,6 +50,28 @@ gradeOverrideStyle.textContent = `
     .cell-grade.interactive:hover {
         background-color: #F5FAF7;
     }
+    
+    /* Responsive bottom action bar for Mark Entry Section */
+    @media (max-width: 768px) {
+        .me-bottom-action-bar {
+            position: fixed !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            background: #ffffff !important;
+            padding: 12px 16px !important;
+            padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+            box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.1) !important;
+            z-index: 99999 !important;
+            margin: 0 !important;
+            border-top: 1px solid #D8E8DE !important;
+        }
+        .me-bottom-action-bar-spacer {
+            display: block !important;
+            height: 80px !important;
+            width: 100% !important;
+        }
+    }
 `;
 document.head.appendChild(gradeOverrideStyle);
 
@@ -886,7 +908,8 @@ function renderJudgeSelectionUI(modalBody, modal, prog, activeJudges, participan
                     </button>` : ''}
                 </div>
 
-                <div class="modal-actions" style="margin-top:0.25rem;">
+                <div class="me-bottom-action-bar-spacer" style="display:none;"></div>
+                <div class="modal-actions me-bottom-action-bar" style="margin-top:0.25rem;">
                     <button type="button" class="btn btn-secondary" id="jSelectCancelBtn">Cancel</button>
                     <button type="button" class="btn btn-primary" id="jSelectProceedBtn" style="margin-left:auto; font-weight:700;">
                         Proceed to Spreadsheet ➔
@@ -947,7 +970,8 @@ function renderJudgeSelectionUI(modalBody, modal, prog, activeJudges, participan
                     </div>
                 </div>
 
-                <div class="modal-actions" style="margin-top:0.25rem;">
+                <div class="me-bottom-action-bar-spacer" style="display:none;"></div>
+                <div class="modal-actions me-bottom-action-bar" style="margin-top:0.25rem;">
                     <button type="button" class="btn btn-secondary" id="jSelectCancelBtn">Cancel</button>
                     <button type="button" class="btn btn-primary" id="jSelectProceedBtn" style="margin-left:auto; font-weight:700;">
                         Proceed to Spreadsheet ➔
@@ -1073,7 +1097,8 @@ function renderJudgeSelectionUI(modalBody, modal, prog, activeJudges, participan
                 </button>
             </div>
 
-            <div class="modal-actions" style="margin-top:0.25rem; display:flex; gap:0.5rem; justify-content:flex-end;">
+            <div class="me-bottom-action-bar-spacer" style="display:none;"></div>
+            <div class="modal-actions me-bottom-action-bar" style="margin-top:0.25rem; display:flex; gap:0.5rem; justify-content:flex-end;">
                 <button type="button" class="btn btn-secondary" id="jSelectCancelBtn">Cancel</button>
                 <button type="button" class="btn btn-secondary" id="jSelectProceedBtn" style="margin-left:auto; font-weight:700;">
                     Proceed to Spreadsheet ➔
@@ -1355,7 +1380,8 @@ function openParticipantLetterModal(modalBody, modal, prog, activeJudges, partic
             </div>
 
             <!-- Actions footer -->
-            <div class="modal-actions" style="margin-top:0.2rem; display:flex; gap:0.5rem; justify-content:space-between; align-items:center;">
+            <div class="me-bottom-action-bar-spacer" style="display:none;"></div>
+            <div class="modal-actions me-bottom-action-bar" style="margin-top:0.2rem; display:flex; gap:0.5rem; justify-content:space-between; align-items:center;">
                 <button type="button" class="btn btn-secondary" id="btnReturnToJudges" style="font-weight:700; font-size:0.82rem; padding:0.4rem 0.85rem;">
                     ⬅️ Return to Judge Assignment
                 </button>
@@ -2077,7 +2103,8 @@ function renderSpreadsheetUI(modalBody, modal, prog, judges, participants, _lega
             </div>
 
             <!-- Footer / Actions -->
-            <div class="modal-actions" style="margin-top:0.5rem;">
+            <div class="me-bottom-action-bar-spacer" style="display:none;"></div>
+            <div class="modal-actions me-bottom-action-bar" style="margin-top:0.5rem;">
                 <button type="button" class="btn btn-secondary" id="meCancelBtn">Cancel</button>
                 <div style="display:flex; gap:0.6rem; margin-left:auto;">
                     <button type="button" class="btn btn-secondary" id="meDraftBtn" style="font-weight:600;">
