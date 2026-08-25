@@ -7391,6 +7391,12 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                         });
                     });
 
+                    for (const [key, val] of studentPrizes.entries()) {
+                        if (val.prizes.length === 0) {
+                            studentPrizes.delete(key);
+                        }
+                    }
+
                     if (studentPrizes.size === 0) {
                         htmlContent = `<div style="text-align:center; padding:3rem; color:#64748b; font-weight:600;">No student prizes recorded under the selected parameters.</div>`;
                     } else {
@@ -8846,6 +8852,10 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
                         const listObj = studentPrizes.get(stuKey);
                         const alreadyAdded = listObj.prizes.some(p => p.programName === r.programName && p.position === w.position);
                         if (!alreadyAdded) {
+                            if (w.position === 'First' && !f.posFirst) return;
+                            if (w.position === 'Second' && !f.posSecond) return;
+                            if (w.position === 'Third' && !f.posThird) return;
+
                             listObj.prizes.push({
                                 programName: r.programName,
                                 position: w.position,
@@ -8855,6 +8865,12 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
                     });
                 });
             });
+
+            for (const [key, val] of studentPrizes.entries()) {
+                if (val.prizes.length === 0) {
+                    studentPrizes.delete(key);
+                }
+            }
 
             // Sort systematically: Category ➔ Class ➔ Student
             const sortedStudents = [...studentPrizes.values()].sort((a, b) => {
