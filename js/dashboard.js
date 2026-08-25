@@ -53,7 +53,10 @@ const views = {
     'settings': initSettingsView,
     'finance': initFinanceView,
     'participants-workflow': (container, topActions) => {
-        const payload = window.__participantsWorkflowPayload || {};
+        let payload = window.__participantsWorkflowPayload;
+        if (!payload) {
+            try { payload = JSON.parse(sessionStorage.getItem('__participantsWorkflowPayload') || '{}'); } catch(e) { payload = {}; }
+        }
         return initParticipantsWorkflowView(container, topActions, payload);
     }
 };
@@ -272,10 +275,16 @@ onAuthStateChanged(auth, async (user) => {
 
                         setupNavigation();
                         // Default View
-                        if (document.body.classList.contains('standalone-mode')) {
-                            navigateTo('mark-entry');
+                        const initialHash = window.location.hash.substring(1);
+                        if (initialHash && views[initialHash]) {
+                            navigateTo(initialHash, true);
+                            window.history.replaceState({ view: initialHash }, '', '#' + initialHash);
+                        } else if (document.body.classList.contains('standalone-mode')) {
+                            navigateTo('mark-entry', true);
+                            window.history.replaceState({ view: 'mark-entry' }, '', '#mark-entry');
                         } else {
-                            navigateTo('dashboard');
+                            navigateTo('dashboard', true);
+                            window.history.replaceState({ view: 'dashboard' }, '', '#dashboard');
                         }
                     }
                 } else {
@@ -331,13 +340,7 @@ function setupNavigation() {
         item.addEventListener('click', (e) => {
             e.preventDefault();
 
-            // Remove active from all
-            navItems.forEach(nav => nav.classList.remove('active'));
-
             const targetView = item.getAttribute('data-view');
-
-            // Add active to all matching links
-            document.querySelectorAll(`[data-view="${targetView}"]`).forEach(el => el.classList.add('active'));
 
             // Close drawer if it's open
             closeMoreDrawer();
@@ -489,7 +492,30 @@ function clearDashboardListeners() {
     }
 }
 
-function navigateTo(viewName) {
+window.addEventListener('popstate', (e) => {
+    if (e.state && e.state.view && views[e.state.view]) {
+        navigateTo(e.state.view, true);
+    } else {
+        const hash = window.location.hash.substring(1);
+        if (hash && views[hash]) {
+            navigateTo(hash, true);
+        }
+    }
+});
+
+function navigateTo(viewName, skipHistory = false) {
+    if (!skipHistory) {
+        window.history.pushState({ view: viewName }, '', '#' + viewName);
+    }
+
+    // Update active sidebar state based on route
+    const matchingLinks = document.querySelectorAll(`[data-view="${viewName}"]`);
+    if (matchingLinks.length > 0) {
+        const allNavItems = document.querySelectorAll('.nav-item[data-view], .bottom-nav-item[data-view], .drawer-item[data-view]');
+        allNavItems.forEach(nav => nav.classList.remove('active'));
+        matchingLinks.forEach(el => el.classList.add('active'));
+    }
+
     // Clear active real-time dashboard listeners immediately on navigating away
     clearDashboardListeners();
 
@@ -592,6 +618,7 @@ function checkAndShowExpiryWarning() {
 
 window.navigateToParticipantsWorkflow = function (progId, progData) {
     window.__participantsWorkflowPayload = { progId, progData };
+    try { sessionStorage.setItem('__participantsWorkflowPayload', JSON.stringify({ progId, progData })); } catch(e) {}
     navigateTo('participants-workflow');
 };
 
