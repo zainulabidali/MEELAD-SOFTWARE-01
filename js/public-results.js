@@ -829,7 +829,7 @@ async function init() {
                     cardBgMap[r.id] = 1;
                 }
                 if (!cardTemplateMap[r.id]) {
-                    cardTemplateMap[r.id] = 1;
+                    cardTemplateMap[r.id] = 2;
                 }
             });
 
@@ -1339,7 +1339,7 @@ function setupFilters() {
                 cardBgMap[targetResult.id] = savedBg ? (savedBg === 'custom' ? 'custom' : (parseInt(savedBg, 10) || 1)) : 1;
             }
             if (!cardTemplateMap[targetResult.id]) {
-                cardTemplateMap[targetResult.id] = 1;
+                cardTemplateMap[targetResult.id] = 2;
             }
 
             currentDisplayedResult = targetResult;
@@ -1676,6 +1676,22 @@ function getPosterInnerHTML(r, bgId, templateId, resultNumber, madrasaName) {
     const brandLogoHTML = displayEventLogo ? `<div class="poster-brand-logo-wrap"><img src="${displayEventLogo}" alt="Logo" class="poster-brand-logo" crossorigin="anonymous" /></div>` : '';
     const brandTaglineHTML = displayEventTagline ? `<div class="poster-brand-tagline">${escapeHTML(displayEventTagline)}</div>` : '';
     const brandHeaderHTML = `
+        <style>
+            .t1-name, .t2-student, .t3-student-name, .t4-student-name {
+                white-space: normal !important;
+                overflow: visible !important;
+                text-overflow: clip !important;
+                word-wrap: break-word !important;
+                line-height: 1.25 !important;
+            }
+            .t1-details, .t3-row-right, .t4-rank-right {
+                overflow: visible !important;
+            }
+            .t1-row, .t2-card-bento, .t3-row-editorial, .t4-rank-block {
+                height: auto !important;
+                overflow: visible !important;
+            }
+        </style>
         <div class="poster-brand-header">
             ${brandLogoHTML}
             <div class="poster-brand-text-wrap">
@@ -1958,7 +1974,7 @@ function renderSingleResult(r) {
     }
 
     const bgId = cardBgMap[r.id] || 1;
-    const templateId = cardTemplateMap[r.id] || 1;
+    const templateId = cardTemplateMap[r.id] || 2;
     const currentBgUrl = getPosterBgUrl(r.id, bgId);
 
     const sortedPublished = [...allResults].sort((a, b) => {
@@ -2510,7 +2526,7 @@ async function generatePosterCanvas(r) {
     }
 
     const bgId = cardBgMap[r.id] || 1;
-    const templateId = cardTemplateMap[r.id] || 1;
+    const templateId = cardTemplateMap[r.id] || 2;
     const bgUrl = getPosterBgUrl(r.id, bgId);
 
     // 1. Generate the blurred background data URL
