@@ -7715,6 +7715,7 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                             categoryId: stu.categoryId || 'general',
                             categoryName: stu.categoryName || 'General',
                             teamName: teamNamesMap[stu.teamId] || resolveTeamName(stu) || 'Independent',
+                            gender: stu.gender || 'Unknown',
                             participationsCount: participations.length,
                             participationsList: participations,
                             status: statusLabel
@@ -7729,127 +7730,49 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                         </div>
                     `;
                     } else {
-                        const grouped = {};
-                        studentDataList.forEach(stu => {
-                            const catId = stu.categoryId;
-                            const catName = stu.categoryName;
-                            const classId = stu.classId;
-                            const className = stu.className;
+                        studentDataList.sort((a, b) => {
+                            const classCompare = a.className.localeCompare(b.className, undefined, { numeric: true, sensitivity: 'base' });
+                            if (classCompare !== 0) return classCompare;
 
-                            if (!grouped[catId]) {
-                                grouped[catId] = {
-                                    name: catName,
-                                    classes: {}
-                                };
-                            }
+                            const genderA = a.gender === 'Male' ? 1 : (a.gender === 'Female' ? 2 : 3);
+                            const genderB = b.gender === 'Male' ? 1 : (b.gender === 'Female' ? 2 : 3);
+                            if (genderA !== genderB) return genderA - genderB;
 
-                            if (!grouped[catId].classes[classId]) {
-                                grouped[catId].classes[classId] = {
-                                    name: className,
-                                    students: []
-                                };
-                            }
-
-                            grouped[catId].classes[classId].students.push(stu);
+                            return a.name.localeCompare(b.name);
                         });
 
-                        const sortedCatIds = Object.keys(grouped).sort((a, b) => grouped[a].name.localeCompare(grouped[b].name));
+                        htmlContent = `
+                        <div class="program-page-standard">
+                            <div style="border-bottom:3px solid #1e1b4b; padding-bottom:0.4rem; margin-bottom:0.75rem;">
+                                <h2 style="color:#1e1b4b; margin:0; font-weight:900;">PARTICIPANTS WITHOUT MAJOR PRIZES</h2>
+                            </div>
 
-                        sortedCatIds.forEach(catId => {
-                            const cat = grouped[catId];
-
-                            let noParticipationCount = 0;
-                            let noPrizeCount = 0;
-                            let thirdPrizeCount = 0;
-
-                            Object.values(cat.classes).forEach(cls => {
-                                cls.students.forEach(s => {
-                                    if (s.status === 'No Participation') noParticipationCount++;
-                                    else if (s.status === 'No Prize') noPrizeCount++;
-                                    else if (s.status === 'Third Prize Only') thirdPrizeCount++;
-                                });
-                            });
-
-                            const totalEligible = noParticipationCount + noPrizeCount + thirdPrizeCount;
-
-                            htmlContent += `
-                            <div class="program-page-standard" style="margin-bottom: 2rem;">
-                                <div style="border-bottom:3px solid #1e1b4b; padding-bottom:0.5rem; margin-bottom:1rem; display:flex; justify-content:space-between; align-items:flex-end;">
-                                    <div>
-                                        <h2 style="color:#1e1b4b; margin:0; text-transform:uppercase; font-weight:900;">🏅 PARTICIPANTS WITHOUT MAJOR PRIZES</h2>
-                                        <h3 style="color:#4338ca; margin-top:0.25rem; font-size:1.1rem; font-weight:700;">${window.escapeHTML(cat.name)}</h3>
-                                    </div>
-                                    <div class="summary-section" style="background:#f1f5f9; border:1px solid #cbd5e1; border-radius:8px; padding:0.5rem 0.75rem; font-size:0.75rem; color:#334155; line-height:1.45; min-width:200px;">
-                                        <div style="font-weight:800; text-transform:uppercase; border-bottom:1.5px solid #cbd5e1; padding-bottom:0.2rem; margin-bottom:0.3rem; color:#1e1b4b;">Category Summary</div>
-                                        <div>No Participation: <strong>${noParticipationCount}</strong></div>
-                                        <div>No Prize: <strong>${noPrizeCount}</strong></div>
-                                        <div>Third Prize Only: <strong>${thirdPrizeCount}</strong></div>
-                                        <div style="font-weight:700; color:#4338ca; margin-top:0.25rem;">Total Eligible: <strong>${totalEligible}</strong></div>
-                                    </div>
-                                </div>
+                            <table class="report-table" style="width: 100%; border-collapse: collapse; font-size: 10.5px; margin-top: 0.5rem;">
+                                <thead>
+                                    <tr style="background-color: #f8fafc;">
+                                        <th style="width: 40px; text-align: center; padding: 5px 6px; border: 1px solid #cbd5e1; font-weight: 800; font-size: 10.5px;">S.No.</th>
+                                        <th style="width: 70px; text-align: center; padding: 5px 6px; border: 1px solid #cbd5e1; font-weight: 800; font-size: 10.5px;">Chest No</th>
+                                        <th style="text-align: left; padding: 5px 6px; border: 1px solid #cbd5e1; font-weight: 800; font-size: 10.5px;">Student Name</th>
+                                        <th style="width: 80px; text-align: left; padding: 5px 6px; border: 1px solid #cbd5e1; font-weight: 800; font-size: 10px;">Class</th>
+                                        <th style="width: 100px; text-align: left; padding: 5px 6px; border: 1px solid #cbd5e1; font-weight: 800; font-size: 10px;">Category</th>
+                                        <th style="width: 120px; text-align: left; padding: 5px 6px; border: 1px solid #cbd5e1; font-weight: 800; font-size: 10px;">Team / House</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${studentDataList.map((s, index) => `
+                                        <tr style="height: 22px; page-break-inside: avoid;">
+                                            <td style="text-align:center; font-weight:700; color:#64748b; padding: 5px 6px; border: 1px solid #cbd5e1;">${index + 1}</td>
+                                            <td style="text-align:center; font-weight:900; color:#0f172a; font-size:11px; padding: 5px 6px; border: 1px solid #cbd5e1;">${window.escapeHTML(s.chestNumber)}</td>
+                                            <td style="font-weight:800; color:#1e1b4b; font-size:10.5px; padding: 5px 6px; border: 1px solid #cbd5e1;">${window.escapeHTML(s.name)}</td>
+                                            <td style="font-weight:700; color:#475569; font-size:10px; padding: 5px 6px; border: 1px solid #cbd5e1;">${window.escapeHTML(s.className)}</td>
+                                            <td style="font-weight:700; color:#475569; font-size:10px; padding: 5px 6px; border: 1px solid #cbd5e1;">${window.escapeHTML(s.categoryName)}</td>
+                                            <td style="font-weight:700; color:#475569; font-size:10px; padding: 5px 6px; border: 1px solid #cbd5e1;">${window.escapeHTML(s.teamName)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
                         `;
-
-                            const sortedClassIds = Object.keys(cat.classes).sort((a, b) => {
-                                const nameA = cat.classes[a].name;
-                                const nameB = cat.classes[b].name;
-                                return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
-                            });
-
-                            sortedClassIds.forEach(classId => {
-                                const cls = cat.classes[classId];
-
-                                const statusPriority = {
-                                    'No Participation': 1,
-                                    'No Prize': 2,
-                                    'Third Prize Only': 3
-                                };
-                                const students = [...cls.students].sort((a, b) => {
-                                    const pA = statusPriority[a.status] || 99;
-                                    const pB = statusPriority[b.status] || 99;
-                                    if (pA !== pB) return pA - pB;
-                                    return a.name.localeCompare(b.name);
-                                });
-
-                                const statusColors = {
-                                    'No Participation': '#64748b',
-                                    'No Prize': '#475569',
-                                    'Third Prize Only': '#b45309'
-                                };
-
-                                htmlContent += `
-                                <div style="margin-left:0.5rem; margin-top:0.75rem; margin-bottom:0.75rem; page-break-inside:avoid; break-inside:avoid;">
-                                    <h4 style="color:#1e1b4b; font-size:0.85rem; font-weight:800; margin-bottom:0.35rem;">Class: ${window.escapeHTML(cls.name)}</h4>
-                                    
-                                    <table class="report-table" style="margin-top:0; margin-bottom:0.5rem; width:100%;">
-                                        <thead>
-                                            <tr>
-                                                <th style="width:70px; text-align:center;">Chest No</th>
-                                                <th>Student Name</th>
-                                                <th>Team / House</th>
-                                                <th style="width:80px; text-align:center;">Participations</th>
-                                                <th style="width:130px; text-align:center;">Status</th>
-                                                <th>Programs Participated</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            ${students.map(s => `
-                                                <tr>
-                                                    <td style="text-align:center; font-weight:900; color:#0f172a;">${window.escapeHTML(s.chestNumber)}</td>
-                                                    <td style="font-weight:800; color:#1e1b4b;">${window.escapeHTML(s.name)}</td>
-                                                    <td style="font-weight:700; color:#475569;">${window.escapeHTML(resolveTeamName(s))}</td>
-                                                    <td style="text-align:center; font-weight:800; color:#4338ca;">${s.participationsCount}</td>
-                                                    <td style="text-align:center; font-weight:700; color:${statusColors[s.status] || '#475569'}; font-size:0.75rem;">${s.status}</td>
-                                                    <td style="font-size:0.72rem; color:#475569; font-weight:500;">${window.escapeHTML(s.participationsList.join(', ') || 'None')}</td>
-                                                </tr>
-                                            `).join('')}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            `;
-                            });
-
-                            htmlContent += `</div>`;
-                        });
                     }
                 }
             }
