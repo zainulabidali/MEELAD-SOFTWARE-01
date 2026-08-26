@@ -7279,11 +7279,40 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                     let match = null;
 
                                     if (Array.isArray(r.marksData)) {
-                                        match = r.marksData.find(m =>
-                                            (r.programType === 'group' && m.teamName === resolveTeamName(w)) ||
-                                            (r.programType !== 'group' && m.studentId === w.studentId) ||
-                                            (r.programType !== 'group' && m.studentName === w.studentName)
-                                        );
+                                        match = r.marksData.find(m => {
+                                            if (r.programType === 'group') {
+                                                // For group events, match by groupId (unique per group).
+                                                // teamName is the school name and is NOT unique — multiple groups
+                                                // from the same school share teamName, causing wrong codeLetter lookup.
+                                                const wGid = w.groupId;
+                                                const mGid = m.groupId;
+                                                if (wGid && mGid && String(wGid).trim() !== '' && String(mGid).trim() !== '') {
+                                                    return String(mGid).trim() === String(wGid).trim();
+                                                }
+                                                // Fallback: match by studentName (group display name) when groupId unavailable
+                                                const wName = w.studentName;
+                                                const mName = m.studentName;
+                                                if (wName && mName) {
+                                                    return String(mName).trim() === String(wName).trim();
+                                                }
+                                                return false;
+                                            }
+                                            // Guard: only compare studentId when BOTH sides are non-empty strings.
+                                            // Without this guard, undefined===undefined is true for every row,
+                                            // causing the first marksData entry's codeLetter to be reused for all winners.
+                                            const wId = w.studentId;
+                                            const mId = m.studentId;
+                                            if (wId && mId && String(wId).trim() !== '' && String(mId).trim() !== '') {
+                                                return String(mId).trim() === String(wId).trim();
+                                            }
+                                            // Fall back to name only when both sides have a name
+                                            const wName = w.studentName;
+                                            const mName = m.studentName;
+                                            if (wName && mName) {
+                                                return String(mName).trim() === String(wName).trim();
+                                            }
+                                            return false;
+                                        });
                                         if (match) {
                                             points = match.totalPoints !== undefined ? `${match.totalPoints} pts` : points;
                                         }
@@ -7294,9 +7323,16 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                                     const showGrade = r.gradeMode !== 'none';
                                     const gradeVal = showGrade ? (w.grade || (match && match.grade) || '—') : '';
 
+                                    // Read codeLetter: first from the winner object directly
+                                    // (covers isGradeOnly entries and any winner that carries it already),
+                                    // then fall back to the matched marksData record.
+                                    const rawCodeLetter = (w.codeLetter !== undefined && w.codeLetter !== null)
+                                        ? w.codeLetter
+                                        : (match ? match.codeLetter : undefined);
+
                                     let codeLetterDisplay = '';
-                                    if (match && match.codeLetter !== undefined && match.codeLetter !== null) {
-                                        const valStr = String(match.codeLetter).trim();
+                                    if (rawCodeLetter !== undefined && rawCodeLetter !== null) {
+                                        const valStr = String(rawCodeLetter).trim();
                                         const valLower = valStr.toLowerCase();
                                         if (valStr !== '' && 
                                             valLower !== 'n/a' && 
