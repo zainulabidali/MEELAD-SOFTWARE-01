@@ -7180,6 +7180,13 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                 else if (f.resultSubOption === 'Program Wise') {
                     const pageDivClass = isCompact ? 'program-card-compact' : 'program-page-standard';
                     filteredResults.forEach(r => {
+                        if (f.gender) {
+                            const progData = allPrograms.find(p => p.id === r.programId || p.id === r.id) || r;
+                            const pGender = progData.genderCategory || progData.gender || '';
+                            if (f.gender === 'Boys' && (pGender === 'Girls' || pGender === 'Female')) return;
+                            if (f.gender === 'Girls' && (pGender === 'Boys' || pGender === 'Male')) return;
+                        }
+
                         const winnersList = Array.isArray(r.winners) ? r.winners : [];
                         const combinedWinners = [...winnersList];
 
@@ -7222,6 +7229,23 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                             if (w.position === 'Second') return f.posSecond;
                             if (w.position === 'Third') return f.posThird;
                             return true;
+                        }).filter(w => {
+                            if (!f.gender) return true;
+                            const prog = allPrograms.find(p => p.id === r.programId || p.id === r.id) || r;
+                            const resolved = resolveWinnerParticipant(prog, w, participantsMap[r.programId || r.id], studentMap);
+                            const members = resolved.memberStudents || [];
+                            if (members.length === 0) {
+                                const g = resolved.gender || w.gender || '';
+                                if (f.gender === 'Boys' && g !== 'Male') return false;
+                                if (f.gender === 'Girls' && g !== 'Female') return false;
+                                return true;
+                            }
+                            return members.some(stu => {
+                                const g = stu.gender || (studentMap[stu.studentId] && studentMap[stu.studentId].gender) || '';
+                                if (f.gender === 'Boys' && g === 'Male') return true;
+                                if (f.gender === 'Girls' && g === 'Female') return true;
+                                return false;
+                            });
                         });
 
                         const sortedWinners = filteredWinners.sort((a, b) => {
@@ -8745,6 +8769,13 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
             csvContent += "POSITION,CALL LETTER,CHEST NUMBER,STUDENT / TEAM NAME,TEAM,GRADE,MARKS\n";
 
             filteredResults.forEach(r => {
+                if (f.gender) {
+                    const progData = allPrograms.find(p => p.id === r.programId || p.id === r.id) || r;
+                    const pGender = progData.genderCategory || progData.gender || '';
+                    if (f.gender === 'Boys' && (pGender === 'Girls' || pGender === 'Female')) return;
+                    if (f.gender === 'Girls' && (pGender === 'Boys' || pGender === 'Male')) return;
+                }
+
                 const winnersList = Array.isArray(r.winners) ? r.winners : [];
                 const combinedWinners = [...winnersList];
 
@@ -8782,7 +8813,26 @@ async function compileCSV(exp, f, programs, resultsList, participantsMap, studen
                     return 4;
                 };
 
-                const sortedWinners = combinedWinners.sort((a, b) => {
+                const filteredWinners = combinedWinners.filter(w => {
+                    if (!f.gender) return true;
+                    const prog = allPrograms.find(p => p.id === r.programId || p.id === r.id) || r;
+                    const resolved = resolveWinnerParticipant(prog, w, participantsMap[r.programId || r.id], studentMap);
+                    const members = resolved.memberStudents || [];
+                    if (members.length === 0) {
+                        const g = resolved.gender || w.gender || '';
+                        if (f.gender === 'Boys' && g !== 'Male') return false;
+                        if (f.gender === 'Girls' && g !== 'Female') return false;
+                        return true;
+                    }
+                    return members.some(stu => {
+                        const g = stu.gender || (studentMap[stu.studentId] && studentMap[stu.studentId].gender) || '';
+                        if (f.gender === 'Boys' && g === 'Male') return true;
+                        if (f.gender === 'Girls' && g === 'Female') return true;
+                        return false;
+                    });
+                });
+
+                const sortedWinners = filteredWinners.sort((a, b) => {
                     const pA = posOrder[a.position] || 4;
                     const pB = posOrder[b.position] || 4;
                     if (pA !== pB) return pA - pB;
