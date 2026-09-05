@@ -1549,6 +1549,25 @@ function renderDrawerContent() {
                         </div>
                     </div>
 
+                    <!-- Program Order (Only visible for Program Wise Results Report) -->
+                    <div id="expProgramOrderContainer" style="display:none; flex-direction:column; gap:0.45rem; margin-top:0.45rem;">
+                        <label style="font-weight:700; color:#475569; font-size:0.78rem;">PROGRAM ORDER</label>
+                        <div style="display:flex; flex-direction:column; gap:0.6rem;">
+                            <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; color:#1e1b4b; cursor:pointer;">
+                                <input type="radio" name="expProgramOrder" value="default" checked style="accent-color:#4f46e5; width:16px; height:16px; cursor:pointer;" /> 
+                                <span style="font-weight:600;">Default Order</span>
+                            </label>
+                            <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; color:#1e1b4b; cursor:pointer;">
+                                <input type="radio" name="expProgramOrder" value="result_number" style="accent-color:#4f46e5; width:16px; height:16px; cursor:pointer;" /> 
+                                <span style="font-weight:600;">Result Number Wise</span>
+                            </label>
+                            <label style="display:flex; align-items:center; gap:0.5rem; font-size:0.85rem; color:#1e1b4b; cursor:pointer;">
+                                <input type="radio" name="expProgramOrder" value="category" style="accent-color:#4f46e5; width:16px; height:16px; cursor:pointer;" /> 
+                                <span style="font-weight:600;">Category Order</span>
+                            </label>
+                        </div>
+                    </div>
+
                     <!-- Chest Number List specific Mode Controls -->
                     <div id="chestListModeContainer" style="display:none; flex-direction:column; gap:0.45rem;">
                         <label style="font-weight:700; color:#475569; font-size:0.78rem;">CHEST NUMBER LIST FORMAT</label>
@@ -1753,6 +1772,15 @@ function renderDrawerContent() {
                 }
             } else {
                 expPositionFilterContainer.style.display = 'none';
+            }
+        }
+
+        const expProgramOrderContainer = document.getElementById('expProgramOrderContainer');
+        if (expProgramOrderContainer) {
+            if (selType === 'Results' && expResultSubVal && expResultSubVal.value === 'Program Wise') {
+                expProgramOrderContainer.style.display = 'flex';
+            } else {
+                expProgramOrderContainer.style.display = 'none';
             }
         }
 
@@ -2327,6 +2355,12 @@ function renderDrawerContent() {
         const participationType = selectedType === 'Program Participation Register' ? document.getElementById('expParticipationFilter').value : '';
         const registerMode = selectedType === 'Program Participation Register' ? document.getElementById('expRegisterMode').value : 'class-wise';
 
+        let programOrder = 'default';
+        if (selectedType === 'Results' && resultSubOption === 'Program Wise') {
+            const orderEl = document.querySelector('input[name="expProgramOrder"]:checked');
+            if (orderEl) programOrder = orderEl.value;
+        }
+
         // Visual Validation Flow: alert if search parameters yield 0 matching programs (Phase 2 validation)
         let filteredProgs = [...allPrograms];
         if (programId) {
@@ -2448,6 +2482,7 @@ function renderDrawerContent() {
                     participationType,
                     registerMode,
                     chestMode,
+                    programOrder,
                     enableTeamBg: isTeamBgEnabled,
                     posFirst,
                     posSecond,
@@ -7178,6 +7213,31 @@ async function compilePDF(exp, f, programs, resultsList, participantsMap, studen
                 }
 
                 else if (f.resultSubOption === 'Program Wise') {
+                    if (f.programOrder === 'result_number') {
+                        filteredResults.sort((a, b) => {
+                            const timeA = a.publishedAt?.seconds || 0;
+                            const timeB = b.publishedAt?.seconds || 0;
+                            return timeA - timeB;
+                        });
+                    } else if (f.programOrder === 'category') {
+                        const getCatPriority = (catId) => {
+                            const idx = allCategories.findIndex(c => c.id === catId);
+                            return idx !== -1 ? idx : 999;
+                        };
+                        filteredResults.sort((a, b) => {
+                            const progA = allPrograms.find(p => p.id === a.programId || p.id === a.id) || a;
+                            const progB = allPrograms.find(p => p.id === b.programId || p.id === b.id) || b;
+                            
+                            const catA = getCatPriority(progA.categoryId);
+                            const catB = getCatPriority(progB.categoryId);
+                            if (catA !== catB) return catA - catB;
+
+                            const nameA = String(progA.programName || progA.name || '').toLowerCase();
+                            const nameB = String(progB.programName || progB.name || '').toLowerCase();
+                            return nameA.localeCompare(nameB);
+                        });
+                    }
+
                     const pageDivClass = isCompact ? 'program-card-compact' : 'program-page-standard';
                     filteredResults.forEach(r => {
                         if (f.gender) {
